@@ -18,10 +18,20 @@ fi
 # Railway Volume on /workspace persists projects + session history.
 mkdir -p /workspace/.opencode
 
-# Pin cwd to /workspace. WORKDIR in the Dockerfile should already do this,
-# but Railway's orchestrator can start the container from / and OpenCode
-# then inherits that as the cwd of every shell tool it spawns ("the current
-# working directory (/) doesn't allow writes").
+# OpenCode picks the "worktree" (project root) by walking up from cwd
+# looking for a .git directory. With no .git ancestor it falls back to /
+# and refuses to write there ("the default working directory (/) doesn't
+# allow writing"). Init /workspace as a git repo so opencode anchors on
+# /workspace as the worktree. Skipped if a previous deploy already set
+# this up.
+if [ ! -d /workspace/.git ]; then
+  git init -q /workspace
+  git -C /workspace config user.email "developer@my-opencode.local"
+  git -C /workspace config user.name  "Developer"
+fi
+
+# Pin cwd to /workspace too — Railway can start the container from /
+# regardless of the Dockerfile's WORKDIR.
 cd /workspace
 
 exec "$@"
