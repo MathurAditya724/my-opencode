@@ -111,6 +111,7 @@ RUN groupadd --gid ${USER_GID} developer \
  && chmod 0440 /etc/sudoers.d/developer \
  && install -d -m 0755 -o developer -g developer \
       /workspace \
+      /home/developer/dev \
       /home/developer/.opencode \
       /home/developer/.opencode/bin \
       /home/developer/.local \
@@ -154,7 +155,11 @@ COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # No VOLUME directive — Railway rejects them. Attach a Railway Volume at
 # /workspace via the dashboard for persistence.
 EXPOSE 4096
-WORKDIR /workspace
+# Start OpenCode in ~/dev. Note: this directory is NOT persisted by the
+# Railway Volume (which is mounted at /workspace) — anything written here
+# is lost on redeploy. Session/auth data still persists via the
+# /workspace/.opencode symlink.
+WORKDIR /home/developer/dev
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
 # to 4096 locally.

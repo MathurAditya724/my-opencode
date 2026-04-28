@@ -21,17 +21,21 @@ mkdir -p /workspace/.opencode
 # OpenCode picks the "worktree" (project root) by walking up from cwd
 # looking for a .git directory. With no .git ancestor it falls back to /
 # and refuses to write there ("the default working directory (/) doesn't
-# allow writing"). Init /workspace as a git repo so opencode anchors on
-# /workspace as the worktree. Skipped if a previous deploy already set
-# this up.
-if [ ! -d /workspace/.git ]; then
-  git init -q /workspace
-  git -C /workspace config user.email "developer@my-opencode.local"
-  git -C /workspace config user.name  "Developer"
+# allow writing"). Init ~/dev as a git repo so opencode anchors there as
+# the worktree. Skipped if a previous deploy already set this up.
+#
+# NOTE: ~/dev is on the image's home filesystem, NOT the Railway Volume,
+# so anything written here is ephemeral. The volume stays at /workspace.
+DEV_DIR="${HOME:-/home/developer}/dev"
+mkdir -p "$DEV_DIR"
+if [ ! -d "$DEV_DIR/.git" ]; then
+  git init -q "$DEV_DIR"
+  git -C "$DEV_DIR" config user.email "developer@my-opencode.local"
+  git -C "$DEV_DIR" config user.name  "Developer"
 fi
 
-# Pin cwd to /workspace too — Railway can start the container from /
-# regardless of the Dockerfile's WORKDIR.
-cd /workspace
+# Pin cwd to ~/dev — Railway can start the container from / regardless
+# of the Dockerfile's WORKDIR.
+cd "$DEV_DIR"
 
 exec "$@"
