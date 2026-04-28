@@ -15,7 +15,7 @@
         "Authorization": "Bearer {env:GITHUB_MCP_TOKEN}"
       }
     },
-    "Sentry": {
+    "sentry": {
       "type": "remote",
       "url": "https://mcp.sentry.dev/mcp",
       "headers": {}

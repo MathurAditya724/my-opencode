@@ -55,7 +55,7 @@ RUN install -d -m 0755 /out/etc/apt/keyrings \
 FROM debian:bookworm-slim AS runtime
 
 ARG NVM_VERSION=v0.40.3
-ARG NODE_VERSION=22.11.0
+ARG NODE_VERSION=22.20.0
 ARG USER_UID=1000
 ARG USER_GID=1000
 

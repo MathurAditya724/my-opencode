@@ -46,5 +46,5 @@ Open <http://localhost:4096>.
 
 ## Notes
 
-- Override Node at build time: `docker build --build-arg NODE_VERSION=20.18.0 -t my-opencode .`
+- Override Node at build time: `docker build --build-arg NODE_VERSION=22.20.0 -t my-opencode .`
 - Python isn't installed. If an npm package needs `node-gyp`, install on the fly inside an OpenCode bash session: `sudo apt-get install -y python3`.

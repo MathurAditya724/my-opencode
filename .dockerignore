@@ -1,10 +1,24 @@
+# VCS
 .git
 .gitignore
-.dockerignore
-Dockerfile
+
+# Docs / meta (not needed in the image)
 README.md
-node_modules
-**/.DS_Store
+LICENSE
+
+# Local-only env files (never bake into image)
+.env
 **/.env
 **/.env.*
+
+# Editor / OS noise
+.idea
+.vscode
+*.swp
+*.swo
+**/.DS_Store
+Thumbs.db
+
+# Build artifacts / logs
+node_modules
 *.log
