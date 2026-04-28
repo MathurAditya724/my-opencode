@@ -18,4 +18,10 @@ fi
 # Railway Volume on /workspace persists projects + session history.
 mkdir -p /workspace/.opencode
 
+# Pin cwd to /workspace. WORKDIR in the Dockerfile should already do this,
+# but Railway's orchestrator can start the container from / and OpenCode
+# then inherits that as the cwd of every shell tool it spawns ("the current
+# working directory (/) doesn't allow writes").
+cd /workspace
+
 exec "$@"
