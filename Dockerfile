@@ -9,16 +9,12 @@ ARG YQ_VERSION=v4.44.3
 ENV DEBIAN_FRONTEND=noninteractive
 
 # tar/gzip are in the slim base; we just need curl + unzip (for Bun).
-# `rm docker-clean` so the apt cache mount can actually persist.
-# Explicit `id=` on cache mounts because Railway's parser requires it.
-RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
- && apt-get update \
+RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
-      unzip
+      unzip \
+ && rm -rf /var/lib/apt/lists/*
 
 # OpenCode install. The script hardcodes $HOME/.opencode/bin as the install
 # dir (it does NOT honor OPENCODE_INSTALL_DIR despite what the docs say), so
@@ -74,10 +70,7 @@ COPY --from=downloader \
      /out/etc/apt/keyrings/githubcli-archive-keyring.gpg \
      /etc/apt/keyrings/githubcli-archive-keyring.gpg
 
-RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
- && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+RUN chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
       > /etc/apt/sources.list.d/github-cli.list \
  && apt-get update \
@@ -100,7 +93,8 @@ RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
       vim-tiny \
       wget \
       xz-utils \
- && ln -s /usr/bin/fdfind /usr/local/bin/fd
+ && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+ && rm -rf /var/lib/apt/lists/*
 
 # Only copy bun's bin/ — the rest is installer scratch.
 COPY --from=downloader /out/usr/local/bin/yq     /usr/local/bin/yq
@@ -121,9 +115,10 @@ RUN groupadd --gid ${USER_GID} developer \
       /home/developer/.opencode/bin \
       /home/developer/.local \
       /home/developer/.local/share \
-      /home/developer/.local/share/opencode \
       /home/developer/.config \
-      /home/developer/.config/opencode
+      /home/developer/.config/opencode \
+ && ln -s /workspace/.opencode /home/developer/.local/share/opencode \
+ && chown -h developer:developer /home/developer/.local/share/opencode
 
 COPY --from=downloader --chown=developer:developer \
      /out/home/developer/.opencode/bin/opencode \
@@ -151,14 +146,17 @@ COPY --chown=developer:developer \
      opencode-user-config.json \
      /home/developer/.config/opencode/opencode.json
 
-# NOTE: no VOLUME directive — Railway rejects them. Mount Railway Volumes
-# at /workspace and /home/developer/.local/share/opencode via the dashboard
-# instead. Both directories are already owned by `developer` from the user
-# setup above, so a fresh volume mount works without further chowning.
+# Tiny entrypoint that mkdir's /workspace/.opencode at runtime so a single
+# Railway Volume mounted at /workspace persists both projects and OpenCode
+# session/auth data (~/.local/share/opencode is symlinked into it).
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# No VOLUME directive — Railway rejects them. Attach a Railway Volume at
+# /workspace via the dashboard for persistence.
 EXPOSE 4096
 WORKDIR /workspace
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
 # to 4096 locally.
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec opencode web --hostname 0.0.0.0 --port ${PORT:-4096}"]

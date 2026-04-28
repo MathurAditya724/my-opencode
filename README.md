@@ -11,14 +11,14 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
   - [Context7](https://context7.com) → `CONTEXT7_API_KEY`
   - [GitHub MCP](https://github.com/github/github-mcp-server) → `GITHUB_MCP_TOKEN`
   - [Sentry MCP](https://mcp.sentry.dev) → no env var
-- Non-root `developer` user. Mount persistent volumes at `/workspace` (your projects) and `/home/developer/.local/share/opencode` (session history + auth) — both are pre-created with the right ownership.
+- Non-root `developer` user. Mount a single persistent volume at `/workspace` to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `/workspace/.opencode`.
 
 ## Deploy on Railway
 
 1. Push this repo to GitHub.
 2. Railway: **New Project → Deploy from GitHub repo**.
 3. **Variables** tab: set `OPENCODE_SERVER_PASSWORD` and at least one LLM provider key.
-4. (Optional) Mount Volumes at `/workspace` and `/home/developer/.local/share/opencode` so projects and session history survive redeploys.
+4. (Optional) Add a **Volume** mounted at `/workspace` so projects and OpenCode session history survive redeploys (sessions live at `/workspace/.opencode` via a symlink — one volume covers both).
 5. **Settings → Networking → Generate Domain**, open it, sign in as `opencode` with the password from step 3.
 
 ## Environment variables
