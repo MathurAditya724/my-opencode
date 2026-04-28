@@ -110,7 +110,6 @@ RUN groupadd --gid ${USER_GID} developer \
  && echo 'developer ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/developer \
  && chmod 0440 /etc/sudoers.d/developer \
  && install -d -m 0755 -o developer -g developer \
-      /workspace \
       /home/developer/dev \
       /home/developer/.opencode \
       /home/developer/.opencode/bin \
@@ -118,7 +117,7 @@ RUN groupadd --gid ${USER_GID} developer \
       /home/developer/.local/share \
       /home/developer/.config \
       /home/developer/.config/opencode \
- && ln -s /workspace/.opencode /home/developer/.local/share/opencode \
+ && ln -s /home/developer/dev/.opencode /home/developer/.local/share/opencode \
  && chown -h developer:developer /home/developer/.local/share/opencode
 
 COPY --from=downloader --chown=developer:developer \
@@ -147,18 +146,15 @@ COPY --chown=developer:developer \
      opencode-user-config.json \
      /home/developer/.config/opencode/opencode.json
 
-# Tiny entrypoint that mkdir's /workspace/.opencode at runtime so a single
-# Railway Volume mounted at /workspace persists both projects and OpenCode
-# session/auth data (~/.local/share/opencode is symlinked into it).
+# Tiny entrypoint that mkdir's ~/dev/.opencode at runtime so a single
+# Railway Volume mounted at ~/dev persists projects + OpenCode session/auth
+# data together (~/.local/share/opencode is symlinked into it).
 COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # No VOLUME directive — Railway rejects them. Attach a Railway Volume at
-# /workspace via the dashboard for persistence.
+# /home/developer/dev (~/dev) via the dashboard for persistence; both
+# projects you clone there and OpenCode session/auth data live in it.
 EXPOSE 4096
-# Start OpenCode in ~/dev. Note: this directory is NOT persisted by the
-# Railway Volume (which is mounted at /workspace) — anything written here
-# is lost on redeploy. Session/auth data still persists via the
-# /workspace/.opencode symlink.
 WORKDIR /home/developer/dev
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
