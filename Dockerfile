@@ -19,15 +19,20 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       curl \
       unzip
 
-# OpenCode goes under .local/bin so `opencode upgrade` can rewrite it later.
-RUN mkdir -p /out/home/developer/.local/bin \
- && OPENCODE_INSTALL_DIR=/out/home/developer/.local/bin \
-    curl -fsSL https://opencode.ai/install | bash
+# OpenCode install. The script hardcodes $HOME/.opencode/bin as the install
+# dir (it does NOT honor OPENCODE_INSTALL_DIR despite what the docs say), so
+# we override $HOME on the bash side of the pipe to redirect placement.
+# --no-modify-path skips the shell-rc edits.
+RUN curl -fsSL https://opencode.ai/install \
+    | HOME=/out/home/developer \
+      bash -s -- --no-modify-path
 
-RUN BUN_INSTALL=/out/opt/bun \
-    curl -fsSL https://bun.sh/install | bash
+# Bun install. BUN_INSTALL has to be on the right of the pipe — that's the
+# bash that actually reads it; setting it on `curl` would be useless.
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/out/opt/bun bash
 
-RUN case "$TARGETARCH" in \
+RUN mkdir -p /out/usr/local/bin \
+ && case "$TARGETARCH" in \
       amd64) yq_arch=amd64 ;; \
       arm64) yq_arch=arm64 ;; \
       *) echo "unsupported arch: $TARGETARCH" >&2; exit 1 ;; \
@@ -37,7 +42,8 @@ RUN case "$TARGETARCH" in \
  && chmod +x /out/usr/local/bin/yq
 
 # Sentry CLI. Env var on the right of the pipe so bash inherits it.
-RUN curl -fsSL https://cli.sentry.dev/install \
+RUN mkdir -p /out/usr/local/bin \
+ && curl -fsSL https://cli.sentry.dev/install \
     | SENTRY_INSTALL_DIR=/out/usr/local/bin \
       bash -s -- --no-modify-path --no-completions
 
@@ -110,20 +116,21 @@ RUN groupadd --gid ${USER_GID} developer \
  && chmod 0440 /etc/sudoers.d/developer \
  && install -d -m 0755 -o developer -g developer \
       /workspace \
+      /home/developer/.opencode \
+      /home/developer/.opencode/bin \
       /home/developer/.local \
-      /home/developer/.local/bin \
       /home/developer/.local/share \
       /home/developer/.local/share/opencode \
       /home/developer/.config \
       /home/developer/.config/opencode
 
 COPY --from=downloader --chown=developer:developer \
-     /out/home/developer/.local/bin/opencode \
-     /home/developer/.local/bin/opencode
+     /out/home/developer/.opencode/bin/opencode \
+     /home/developer/.opencode/bin/opencode
 
 # nvm + Node + corepack pnpm/yarn, installed as the developer user.
 ENV NVM_DIR=/home/developer/.nvm
-ENV PATH=/home/developer/.local/bin:$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+ENV PATH=/home/developer/.opencode/bin:$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
 
 USER developer
 RUN mkdir -p "$NVM_DIR" \
@@ -131,6 +138,7 @@ RUN mkdir -p "$NVM_DIR" \
  && bash -c '. "$NVM_DIR/nvm.sh" \
       && nvm install "$NODE_VERSION" \
       && nvm alias default "$NODE_VERSION" \
+      && npm install -g corepack@latest \
       && corepack enable \
       && corepack prepare pnpm@latest --activate \
       && corepack prepare yarn@stable --activate \
