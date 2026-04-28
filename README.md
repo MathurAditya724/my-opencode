@@ -11,7 +11,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
   - [Context7](https://context7.com) → `CONTEXT7_API_KEY`
   - [GitHub MCP](https://github.com/github/github-mcp-server) → `GITHUB_MCP_TOKEN`
   - [Sentry MCP](https://mcp.sentry.dev) → no env var
-- Non-root `developer` user; `/workspace` and `/home/developer/.local/share/opencode` declared as volumes.
+- Non-root `developer` user. Mount persistent volumes at `/workspace` (your projects) and `/home/developer/.local/share/opencode` (session history + auth) — both are pre-created with the right ownership.
 
 ## Deploy on Railway
 

@@ -150,8 +150,11 @@ COPY --chown=developer:developer \
      opencode-user-config.json \
      /home/developer/.config/opencode/opencode.json
 
+# NOTE: no VOLUME directive — Railway rejects them. Mount Railway Volumes
+# at /workspace and /home/developer/.local/share/opencode via the dashboard
+# instead. Both directories are already owned by `developer` from the user
+# setup above, so a fresh volume mount works without further chowning.
 EXPOSE 4096
-VOLUME ["/workspace", "/home/developer/.local/share/opencode"]
 WORKDIR /workspace
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
