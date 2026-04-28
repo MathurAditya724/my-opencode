@@ -2,7 +2,7 @@
 
 Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to deploy on [Railway](https://railway.app) (or any PaaS that builds Dockerfiles and forwards `$PORT`).
 
-> Set `OPENCODE_SERVER_PASSWORD` before going public — it's the basic-auth gate over the URL.
+> The container exposes the OpenCode web UI with no built-in auth. Put [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-public-app/) (or equivalent) in front of the public domain before exposing it — see [Auth](#auth) below.
 
 ## What's inside
 
@@ -17,9 +17,22 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 
 1. Push this repo to GitHub.
 2. Railway: **New Project → Deploy from GitHub repo**.
-3. **Variables** tab: set `OPENCODE_SERVER_PASSWORD` and at least one LLM provider key.
+3. **Variables** tab: set at least one LLM provider key (e.g. `ANTHROPIC_API_KEY`).
 4. (Optional) Add a **Volume** mounted at `/home/developer/dev` so projects you clone and OpenCode session history both survive redeploys (sessions live at `~/dev/.opencode` via a symlink, so one volume covers both).
-5. **Settings → Networking → Generate Domain**, open it, sign in as `opencode` with the password from step 3.
+5. **Settings → Networking → Generate Domain**. Don't open it publicly — first put Cloudflare Access in front (see [Auth](#auth)), then visit the Access-protected URL and sign in via your IdP.
+
+## Auth
+
+The image runs `opencode web` with no built-in authentication, so you **must** front it with an auth proxy that issues a real session cookie (basic auth re-prompts constantly on mobile, which is why it's gone).
+
+Recommended: **[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-public-app/)**.
+
+1. Point your custom domain at the Railway-generated domain via Cloudflare DNS (orange-cloud / proxied).
+2. **Cloudflare Zero Trust → Access → Applications → Add an application → Self-hosted**, set the application domain to your custom hostname.
+3. Add a policy (e.g. allow your email, an `@yourdomain` rule, or a GitHub identity).
+4. Visit the domain — you'll get Cloudflare's sign-in page, then a long-lived `CF_Authorization` cookie that mobile browsers keep across app kills and reboots.
+
+Alternatives: [Tailscale Serve / Funnel](https://tailscale.com/kb/1242/tailscale-serve), [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) sidecar, [Authelia](https://www.authelia.com/).
 
 ## Environment variables
 
@@ -27,9 +40,7 @@ See [`.env.example`](./.env.example) for the full template.
 
 | Variable | What it does |
 |---|---|
-| `OPENCODE_SERVER_PASSWORD` | **Required.** Basic-auth password. |
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
-| `OPENCODE_SERVER_USERNAME` | Basic-auth username (default `opencode`). |
 | `CONTEXT7_API_KEY`, `GITHUB_MCP_TOKEN` | Credentials for the preconfigured MCP servers. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
