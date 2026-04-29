@@ -1,0 +1,55 @@
+# Build the Docker image in CI to catch breakage before it lands on Railway.
+# Image is not pushed anywhere — this is purely a build-time smoke test.
+name: docker-build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-entrypoint.sh"
+      - "opencode-user-config.json"
+      - ".github/workflows/docker-build.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-entrypoint.sh"
+      - "opencode-user-config.json"
+      - ".github/workflows/docker-build.yml"
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same ref when a new commit lands. The
+# bun-from-source build is slow (minutes), no point burning runners on
+# stale SHAs.
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (linux/amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Single-platform build, no push. Cache layers in the GHA cache so
+      # iterative changes to the Dockerfile don't redo `bun install` every
+      # time. `mode=max` caches intermediate stages (the downloader stage
+      # is what's expensive here).
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: false
+          tags: my-opencode:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -6,27 +6,57 @@ FROM debian:bookworm-slim AS downloader
 ARG TARGETARCH
 ARG YQ_VERSION=v4.44.3
 
+# Build OpenCode from BYK's fork (https://github.com/BYK/opencode) at the
+# byk/cumulative branch instead of using the official prebuilt binaries.
+# That branch carries fixes that aren't yet upstream (question dock UX, plan
+# mode guards, db perf, etc.). No prebuilt releases exist for the fork, so
+# we have to build the binary from source with bun.
+ARG OPENCODE_REPO=https://github.com/BYK/opencode.git
+ARG OPENCODE_REF=byk/cumulative
+
 ENV DEBIAN_FRONTEND=noninteractive
 
-# tar/gzip are in the slim base; we just need curl + unzip (for Bun).
+# Build deps for compiling opencode from source: git to clone, build-essential
+# / python3 for any native node modules pulled in by `bun install`, unzip for
+# the bun installer.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
+      build-essential \
       ca-certificates \
       curl \
+      git \
+      pkg-config \
+      python3 \
       unzip \
  && rm -rf /var/lib/apt/lists/*
 
-# OpenCode install. The script hardcodes $HOME/.opencode/bin as the install
-# dir (it does NOT honor OPENCODE_INSTALL_DIR despite what the docs say), so
-# we override $HOME on the bash side of the pipe to redirect placement.
-# --no-modify-path skips the shell-rc edits.
-RUN curl -fsSL https://opencode.ai/install \
-    | HOME=/out/home/developer \
-      bash -s -- --no-modify-path
-
 # Bun install. BUN_INSTALL has to be on the right of the pipe — that's the
 # bash that actually reads it; setting it on `curl` would be useless.
+# Installed before the opencode build so we can use it for compilation.
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/out/opt/bun bash
+
+ENV PATH=/out/opt/bun/bin:$PATH
+
+# Build opencode from the BYK fork. `bun run build --single` produces a
+# single native binary for the host platform under
+# packages/opencode/dist/opencode-<os>-<arch>/bin/opencode. We mirror the
+# upstream installer's layout by copying that into
+# /out/home/developer/.opencode/bin/opencode so the runtime stage's COPY
+# path stays unchanged.
+RUN git clone --depth 1 --branch "$OPENCODE_REF" "$OPENCODE_REPO" /tmp/opencode-src \
+ && cd /tmp/opencode-src \
+ && bun install \
+ && bun run --cwd packages/opencode build --single \
+ && case "$TARGETARCH" in \
+      amd64) oc_arch=x64 ;; \
+      arm64) oc_arch=arm64 ;; \
+      *) echo "unsupported arch: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+ && install -d /out/home/developer/.opencode/bin \
+ && cp "packages/opencode/dist/opencode-linux-${oc_arch}/bin/opencode" \
+       /out/home/developer/.opencode/bin/opencode \
+ && chmod +x /out/home/developer/.opencode/bin/opencode \
+ && rm -rf /tmp/opencode-src ~/.bun/install/cache
 
 RUN mkdir -p /out/usr/local/bin \
  && case "$TARGETARCH" in \
