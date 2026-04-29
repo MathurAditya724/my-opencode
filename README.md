@@ -6,7 +6,8 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 
 ## What's inside
 
-- **OpenCode** (latest, autoupdates) + [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
+- **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
+- [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - **Three remote MCP servers** preconfigured; credentials are pulled from env vars via `{env:VAR}` substitution, so nothing sensitive is baked into the image:
   - [Context7](https://context7.com) → `CONTEXT7_API_KEY`
   - [GitHub MCP](https://github.com/github/github-mcp-server) → `GITHUB_MCP_TOKEN`
@@ -58,4 +59,7 @@ Open <http://localhost:4096>.
 ## Notes
 
 - Override Node at build time: `docker build --build-arg NODE_VERSION=22.20.0 -t my-opencode .`
-- Python isn't installed. If an npm package needs `node-gyp`, install on the fly inside an OpenCode bash session: `sudo apt-get install -y python3`.
+- Python isn't installed in the runtime image. If an npm package needs `node-gyp`, install on the fly inside an OpenCode bash session: `sudo apt-get install -y python3`.
+- Pin a different opencode revision/fork at build time:
+  `docker build --build-arg OPENCODE_REPO=https://github.com/anomalyco/opencode.git --build-arg OPENCODE_REF=dev -t my-opencode .`
+  (defaults: `BYK/opencode` @ `byk/cumulative`).
