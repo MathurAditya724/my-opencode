@@ -9,7 +9,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Listener stays off until you create a config file with at least one trigger (see [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below).
+- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) configured with one default trigger (issue assigned → `github-issue-resolver`). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
 - **Bundled agent: [`github-issue-resolver`](./agents/github-issue-resolver.md)** — autonomous "issue assigned → branch → plan → implement → PR" workflow, designed to be invoked by the webhook plugin or directly via `@github-issue-resolver`.
 - Non-root `developer` user. OpenCode starts in `~/dev`. Mount a single persistent volume at `~/dev` (= `/home/developer/dev`) to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `~/dev/.opencode`.
 
@@ -55,12 +55,31 @@ supervise, no loopback HTTP. It opens its own listener on port `5050`
 (configurable via `WEBHOOK_PORT`) and dispatches verified deliveries
 into agent sessions via the in-process SDK client.
 
-The plugin stays dormant until you give it a config file. By default it
-looks at `~/.config/opencode/webhooks.json`; override the path with
-`WEBHOOKS_CONFIG` (handy if you want the file on the `~/dev` volume so
-it survives image rebuilds).
+### Default behavior
 
-### Example config
+The image ships with [`webhooks.json`](./webhooks.json) baked in at
+`~/.config/opencode/webhooks.json`. It defines **one trigger**: when an
+issue is assigned to someone, run the [`github-issue-resolver`](./agents/github-issue-resolver.md) agent against that
+repo and issue.
+
+Once `GITHUB_WEBHOOK_SECRET` is set in your environment, the plugin
+boots its listener on port 5050 automatically. No further setup needed.
+
+### Overriding the default config
+
+The bundled file is fine for the "issue assigned → resolve it" flow
+out of the box. To customize:
+
+- **Edit before building** — change [`webhooks.json`](./webhooks.json) in
+  this repo and rebuild the image. Triggers stay version-controlled.
+- **Override at runtime** — set `WEBHOOKS_CONFIG=/home/developer/dev/.opencode/webhooks.json`
+  (or any other path) and put your own file there. Handy for adding
+  per-deployment triggers without rebuilding.
+
+The HMAC secret (`secret` field) is intentionally **not** baked into the
+file — set `GITHUB_WEBHOOK_SECRET` as an env var instead.
+
+### Config schema
 
 ```json
 {
@@ -70,11 +89,11 @@ it survives image rebuilds).
   "retention": 1000,
   "triggers": [
     {
-      "name": "issue-assigned-to-me",
+      "name": "issue-assigned",
       "event": "issues",
       "action": "assigned",
       "agent": "github-issue-resolver",
-      "prompt_template": "Resolve issue #{{ payload.issue.number }} ({{ payload.issue.title }}) in {{ payload.repository.full_name }}.\n\nIssue body:\n{{ payload.issue.body }}\n\nAssignee: {{ payload.assignee.login }}.\n\nFollow your standard workflow: clone, branch, plan, implement, push, open PR.",
+      "prompt_template": "Resolve issue #{{ payload.issue.number }} ({{ payload.issue.title }}) in {{ payload.repository.full_name }}.\n\n{{ payload.issue.body }}",
       "cwd": null
     }
   ]

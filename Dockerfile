@@ -202,6 +202,17 @@ RUN cd /home/developer/.config/opencode \
  && bun install --production \
  && rm -rf ~/.bun/install/cache
 
+# Default config for the github-webhooks plugin: one trigger that wires
+# the `issues.assigned` event to the bundled `github-issue-resolver`
+# agent. The plugin reads this on startup; without it, the listener
+# stays off (no surprise port). Override per-deploy by setting
+# WEBHOOKS_CONFIG to a path on your persistent volume (e.g.
+# ~/dev/.opencode/webhooks.json) and putting your own file there. The
+# HMAC secret is intentionally NOT in this file — set
+# GITHUB_WEBHOOK_SECRET as an env var so it isn't baked into the image.
+COPY --chown=developer:developer webhooks.json \
+     /home/developer/.config/opencode/webhooks.json
+
 # Tiny entrypoint that mkdir's ~/dev/.opencode at runtime so a single
 # Railway Volume mounted at ~/dev persists projects + OpenCode session/auth
 # data together (~/.local/share/opencode is symlinked into it).
