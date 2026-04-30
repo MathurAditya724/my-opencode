@@ -10,7 +10,12 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
 - **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (one default trigger: issue assigned → `github-issue-resolver`). Activates on container start once you set `GITHUB_WEBHOOK_SECRET` — the env var plus the bundled file are all you need. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
-- **Bundled agent: [`github-issue-resolver`](./agents/github-issue-resolver.md)** — autonomous "issue assigned → branch → plan → implement → PR" workflow, designed to be invoked by the webhook plugin or directly via `@github-issue-resolver`.
+- **Bundled agent: [`github-issue-resolver`](./agents/github-issue-resolver.md)** — autonomous "issue assigned → branch → plan → implement → draft PR" workflow, designed to be invoked by the webhook plugin or directly via `@github-issue-resolver`. Permissions are pre-broadened (incl. `external_directory`) so the agent never stalls waiting for an approval prompt that no human will answer.
+- **Bundled skills** (loadable on demand by any agent via the `skill` tool):
+  - [`pr`](./skills/pr/SKILL.md) — open a draft PR with the implementation plan attached as a git note.
+  - [`review`](./skills/review/SKILL.md) — self-review the diff (and PR description) before merge.
+  - [`deslop`](./skills/deslop/SKILL.md) — strip AI-generated noise from the diff before commit.
+  - All three are adapted from [BYK/dotskills](https://github.com/BYK/dotskills) (Apache-2.0).
 - Non-root `developer` user. OpenCode starts in `~/dev`. Mount a single persistent volume at `~/dev` (= `/home/developer/dev`) to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `~/dev/.opencode`.
 
 ## Deploy on Railway

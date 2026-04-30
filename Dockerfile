@@ -182,6 +182,14 @@ COPY --chown=developer:developer \
 COPY --chown=developer:developer agents \
      /home/developer/.config/opencode/agents
 
+# Bundled skills (pr, review, deslop). Each skill lives at
+# ~/.config/opencode/skills/<name>/SKILL.md and is auto-discovered by
+# OpenCode's skill tool. The github-issue-resolver agent loads these
+# on demand at the relevant workflow step. Adapted from
+# https://github.com/BYK/dotskills (Apache-2.0).
+COPY --chown=developer:developer skills \
+     /home/developer/.config/opencode/skills
+
 # Bundled plugins (e.g. github-webhooks). OpenCode auto-loads any
 # .ts/.js file in this directory at startup. The sibling package.json
 # declares the npm deps the plugins import (@opencode-ai/plugin); we
