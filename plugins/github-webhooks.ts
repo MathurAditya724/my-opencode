@@ -37,6 +37,12 @@ type Trigger = {
   prompt_template: string       // {{ payload.foo.bar }} placeholders
   cwd?: string | null           // optional override for session directory
   enabled?: boolean             // default true
+  // Self-loop guard. If the inbound delivery's payload.sender.login
+  // matches any name in this list (case-insensitive, exact match), the
+  // trigger is skipped. Use this to stop the bot from triggering itself
+  // when its own commits / comments / reviews fire fresh webhooks. Common
+  // values: ["github-actions[bot]", "<your-bot-username>"].
+  ignore_authors?: string[]
 }
 
 type WebhookConfig = {
@@ -168,11 +174,26 @@ type NormalizedTrigger = Omit<Trigger, "action" | "enabled"> & {
   enabled: boolean
 }
 
-function normalizeTrigger(t: Trigger): NormalizedTrigger {
+function normalizeTrigger(
+  t: Trigger,
+  extraIgnoreAuthors: string[],
+): NormalizedTrigger {
+  // Merge config-supplied ignore_authors with extras (typically the
+  // BOT_LOGIN env var). Dedup case-insensitively so explicit config +
+  // env-var-derived entries don't duplicate.
+  const merged: string[] = []
+  const seen = new Set<string>()
+  for (const a of [...(t.ignore_authors ?? []), ...extraIgnoreAuthors]) {
+    const k = a.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    merged.push(a)
+  }
   return {
     ...t,
     action: t.action ?? null,
     enabled: t.enabled !== false,
+    ignore_authors: merged.length > 0 ? merged : undefined,
   }
 }
 
@@ -228,7 +249,25 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   // can shift across sessions; we want one global delivery log).
   const dbPath =
     cfg.db_path ?? `${homedir()}/dev/.opencode/github-webhooks.sqlite`
-  const triggers = (cfg.triggers ?? []).map(normalizeTrigger)
+
+  // BOT_LOGIN(S): self-loop guard sourced from the environment instead
+  // of webhooks.json, so users don't have to edit the bundled file just
+  // to plug in their bot's identity. Singular BOT_LOGIN is the common
+  // case (one PAT, one user); plural BOT_LOGINS accepts a comma-
+  // separated list for shops with multiple service accounts. Both, if
+  // set, are appended (deduped) to every trigger's ignore_authors.
+  const envIgnoreAuthors: string[] = []
+  if (process.env.BOT_LOGIN) envIgnoreAuthors.push(process.env.BOT_LOGIN.trim())
+  if (process.env.BOT_LOGINS) {
+    for (const l of process.env.BOT_LOGINS.split(",")) {
+      const trimmed = l.trim()
+      if (trimmed) envIgnoreAuthors.push(trimmed)
+    }
+  }
+
+  const triggers = (cfg.triggers ?? []).map((t) =>
+    normalizeTrigger(t, envIgnoreAuthors),
+  )
 
   // Bail quietly when nothing is configured. Loading the plugin without
   // setting up triggers shouldn't open a port nobody asked for.
@@ -454,9 +493,39 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
         })
       }
 
+      // Pull the sender login once for ignore_authors filtering. GitHub
+      // sets this on every event payload to identify whoever caused the
+      // event (the pusher, commenter, reviewer, etc.). For check_suite
+      // / check_run events the sender is the app/bot that uploaded the
+      // result, which is exactly the case we want to filter.
+      const senderLogin =
+        typeof payload === "object" && payload !== null
+          ? (payload as { sender?: { login?: unknown } }).sender?.login
+          : undefined
+      const sender = typeof senderLogin === "string" ? senderLogin : null
+
       const matches = findMatching(triggers, event, action)
       const dispatched: string[] = []
+      const skipped: Array<{ name: string; reason: string }> = []
       for (const t of matches) {
+        // Self-loop guard. Case-insensitive exact match on
+        // payload.sender.login. Common values to filter:
+        //   - 'github-actions[bot]'  (CI workflow runs)
+        //   - the agent's own commit-author username
+        if (t.ignore_authors && t.ignore_authors.length > 0 && sender) {
+          const lower = sender.toLowerCase()
+          const hit = t.ignore_authors.some(
+            (a) => a.toLowerCase() === lower,
+          )
+          if (hit) {
+            skipped.push({
+              name: t.name,
+              reason: `ignored sender '${sender}'`,
+            })
+            continue
+          }
+        }
+
         const prompt = renderTemplate(t.prompt_template, {
           event,
           action,
@@ -476,6 +545,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
         action,
         duplicate: false,
         dispatched,
+        ...(skipped.length > 0 ? { skipped } : {}),
       })
     },
   })
