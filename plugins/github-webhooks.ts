@@ -127,30 +127,50 @@ function lookup(ctx: unknown, path: string): unknown {
   return cur
 }
 
-// Trigger matching with priority: exact (event, action), then
-// (event, null), then ('*', null). Multiple matches all fire.
+// Trigger matching: every enabled trigger that matches the incoming
+// (event, action) pair fires. There's no priority ordering — if you
+// register both a specific `{ event: "issues", action: "assigned" }`
+// trigger and a catch-all `{ event: "*" }` trigger, BOTH dispatch on
+// `issues.assigned`. That's strictly more flexible than "highest
+// priority wins" (you can layer an audit-log trigger over a domain
+// trigger without one suppressing the other) and is bounded by the
+// concurrency semaphore so cost stays predictable.
+//
+// A trigger matches when:
+//   - t.event matches the delivery's event (or t.event === "*"), AND
+//   - t.action is null (= "any action of this event") OR
+//     t.action equals the delivery's action.
+//
+// Trigger.action is normalized to null at load time, so the strict
+// equality below works for both null payloads and absent-field configs.
 function findMatching(
-  triggers: Trigger[],
+  triggers: NormalizedTrigger[],
   event: string,
   action: string | null,
-): Trigger[] {
-  const enabled = triggers.filter((t) => t.enabled !== false)
-  const score = (t: Trigger) => {
-    if (t.event === event && t.action === action) return 0
-    if (t.event === event && (t.action == null || t.action === undefined))
-      return 1
-    if (t.event === "*") return 2
-    return 99
+): NormalizedTrigger[] {
+  return triggers.filter((t) => {
+    if (t.enabled === false) return false
+    const eventOk = t.event === "*" || t.event === event
+    if (!eventOk) return false
+    const actionOk = t.action === null || t.action === action
+    return actionOk
+  })
+}
+
+// Trigger as it lives in memory after normalization. action is always
+// `string | null` (config-supplied undefined/missing field becomes
+// null), enabled is always boolean.
+type NormalizedTrigger = Omit<Trigger, "action" | "enabled"> & {
+  action: string | null
+  enabled: boolean
+}
+
+function normalizeTrigger(t: Trigger): NormalizedTrigger {
+  return {
+    ...t,
+    action: t.action ?? null,
+    enabled: t.enabled !== false,
   }
-  return enabled
-    .filter((t) => score(t) < 99)
-    .filter((t) => {
-      // Exact mismatch on a present action: drop.
-      if (t.event === event && t.action != null && t.action !== action)
-        return false
-      return true
-    })
-    .sort((a, b) => score(a) - score(b))
 }
 
 // ---------- Concurrency gate --------------------------------------------
@@ -198,21 +218,26 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
   const defaultCwd = cfg.default_cwd ?? ctx.directory
   const retention = cfg.retention ?? 1000
+  // Default DB lives on the persistent ~/dev volume so dedup state
+  // survives both restarts AND project-directory changes (ctx.directory
+  // can shift across sessions; we want one global delivery log).
   const dbPath =
-    cfg.db_path ?? `${ctx.directory}/.opencode/github-webhooks.sqlite`
-  const triggers = cfg.triggers ?? []
+    cfg.db_path ?? `${homedir()}/dev/.opencode/github-webhooks.sqlite`
+  const triggers = (cfg.triggers ?? []).map(normalizeTrigger)
 
   // Bail quietly when nothing is configured. Loading the plugin without
   // setting up triggers shouldn't open a port nobody asked for.
+  const configHint =
+    process.env.WEBHOOKS_CONFIG ?? `${homedir()}/.config/opencode/webhooks.json`
   if (triggers.length === 0) {
     console.log(
-      "[github-webhooks] no triggers configured under experimental.webhook.triggers — listener disabled",
+      `[github-webhooks] no triggers configured (looked at ${configHint}) — listener disabled`,
     )
     return {}
   }
   if (!secret) {
     console.warn(
-      "[github-webhooks] WARNING: no HMAC secret configured (experimental.webhook.secret or GITHUB_WEBHOOK_SECRET) — webhooks will be rejected with 503 until you set one",
+      `[github-webhooks] WARNING: no HMAC secret configured (set "secret" in ${configHint} or GITHUB_WEBHOOK_SECRET) — webhooks will be rejected with 503 until you set one`,
     )
   }
 
@@ -250,13 +275,34 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
 
   const sem = makeSemaphore(maxConcurrent)
 
+  // Track in-flight dispatches so graceful shutdown can wait for them
+  // to complete before fully closing the listener. Counts ALL dispatches
+  // (queued behind the semaphore + actively running), so the
+  // listener stays alive until the queue drains.
+  let inFlightDispatches = 0
+  const drainWaiters: Array<() => void> = []
+  function dispatchStarted() {
+    inFlightDispatches++
+  }
+  function dispatchEnded() {
+    inFlightDispatches--
+    if (inFlightDispatches === 0) {
+      while (drainWaiters.length > 0) drainWaiters.shift()!()
+    }
+  }
+  function waitForDrain(): Promise<void> {
+    if (inFlightDispatches === 0) return Promise.resolve()
+    return new Promise<void>((r) => drainWaiters.push(r))
+  }
+
   // Actually drive a session. ctx.client is bound to the running
   // opencode server — no loopback HTTP, no cold-boot race.
   async function dispatchOne(
-    t: Trigger,
+    t: NormalizedTrigger,
     prompt: string,
     deliveryId: string,
   ): Promise<void> {
+    dispatchStarted()
     await sem.acquire()
     const abort = new AbortController()
     const timer = setTimeout(() => abort.abort(), timeoutMs)
@@ -295,6 +341,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     } finally {
       clearTimeout(timer)
       sem.release()
+      dispatchEnded()
     }
   }
 
@@ -403,13 +450,61 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     `[github-webhooks] listening on http://0.0.0.0:${port} (db: ${dbPath}, triggers: ${triggers.length})`,
   )
 
+  // Graceful shutdown. When opencode is shutting down (Railway redeploy,
+  // local Ctrl-C, OOM-kill, etc.) we want to:
+  //   1. Stop accepting new HTTP connections immediately, so a webhook
+  //      that arrives during the kill window doesn't silently fail
+  //      partway through (GitHub will retry it; better than us claiming
+  //      we accepted it then dying).
+  //   2. Let already-dispatched agent sessions finish their
+  //      session.create+session.prompt round-trip rather than die
+  //      mid-flight and leave a half-baked session row on the host.
+  //
+  // Bun.serve.stop(true) closes the listening socket immediately, so
+  // step 1 is just that. For step 2 we await `waitForDrain()` — the
+  // counter is incremented inside dispatchOne and decremented in its
+  // finally block, so it covers both queued-on-semaphore and actively-
+  // running dispatches. A 25s ceiling guards against an agent that's
+  // hung on an external call; opencode itself will get its SIGTERM
+  // shortly after ours from the same orchestrator and tear things
+  // down regardless.
+  let stopping = false
+  const onShutdown = async (sig: NodeJS.Signals) => {
+    if (stopping) return
+    stopping = true
+    console.log(
+      `[github-webhooks] received ${sig}, closing listener (in-flight dispatches: ${inFlightDispatches})`,
+    )
+    server.stop(true)
+    const drainTimeoutMs = 25_000
+    try {
+      await Promise.race([
+        waitForDrain(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("drain timeout")),
+            drainTimeoutMs,
+          ),
+        ),
+      ])
+      console.log(`[github-webhooks] all dispatches drained`)
+    } catch {
+      console.warn(
+        `[github-webhooks] drain timeout after ${drainTimeoutMs}ms — ${inFlightDispatches} dispatch(es) still in flight`,
+      )
+    }
+  }
+  process.on("SIGTERM", () => void onShutdown("SIGTERM"))
+  process.on("SIGINT", () => void onShutdown("SIGINT"))
+
   // Plugin hooks. We don't currently need any event hooks — the entire
   // value of this plugin is the listener it opened above. Returning {}
   // is fine; the listener stays alive as long as the host process does.
   return {}
 }
 
-// OpenCode's plugin loader looks for any exported function. We export
-// our plugin as both the named export above (for tests / explicit
-// import) and `default` for the auto-loader.
+// `default` is purely ergonomic — OpenCode's plugin loader picks up any
+// exported function from a file in ~/.config/opencode/plugins/, so the
+// named export above is sufficient. Keeping `default` so the file also
+// works for callers that prefer `import x from "./github-webhooks"`.
 export default GitHubWebhooksPlugin

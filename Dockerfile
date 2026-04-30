@@ -187,6 +187,13 @@ COPY --chown=developer:developer agents \
 # declares the npm deps the plugins import (@opencode-ai/plugin); we
 # `bun install` them once at build time so OpenCode doesn't have to do
 # it on every container start.
+#
+# IMPORTANT: do NOT mount a runtime volume over /home/developer/.config/
+# opencode — it would mask the baked-in node_modules and the plugin
+# loader would fail at startup with `Cannot find module '@opencode-ai/
+# plugin'`. Persistent state (sessions, auth) lives at ~/dev/.opencode
+# already via the symlink set up below; that's the only directory you
+# should attach a volume to.
 COPY --chown=developer:developer plugins \
      /home/developer/.config/opencode/plugins
 COPY --chown=developer:developer opencode-config-package.json \
