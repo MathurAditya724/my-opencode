@@ -8,8 +8,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
-- **One remote MCP server** preconfigured; credentials are pulled from env vars via `{env:VAR}` substitution, so nothing sensitive is baked into the image:
-  - [Context7](https://context7.com) → `CONTEXT7_API_KEY`
+- No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
 - Non-root `developer` user. OpenCode starts in `~/dev`. Mount a single persistent volume at `~/dev` (= `/home/developer/dev`) to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `~/dev/.opencode`.
 
 ## Deploy on Railway
@@ -40,7 +39,6 @@ See [`.env.example`](./.env.example) for the full template.
 | Variable | What it does |
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
-| `CONTEXT7_API_KEY` | Credentials for the preconfigured MCP server. |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
 
 ## Local test
