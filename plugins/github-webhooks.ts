@@ -43,6 +43,19 @@ type Trigger = {
   // when its own commits / comments / reviews fire fresh webhooks. Common
   // values: ["github-actions[bot]", "<your-bot-username>"].
   ignore_authors?: string[]
+  // Optional payload-shape gate. Keys are dotted paths into the parsed
+  // payload (same syntax as the prompt template's `{{ a.b.c }}`). Values
+  // are matched as follows:
+  //   - "*"   -> any non-empty (truthy) value matches; useful for
+  //              "this field exists and isn't empty" checks like
+  //              `{ "issue.pull_request": "*" }` to filter issue_comment
+  //              events to PR comments only.
+  //   - other -> strict equality after JSON.stringify normalization, so
+  //              both `"failure"` and `42` work as scalar matches.
+  // Multiple keys are AND-ed. Triggers without a payload_filter behave
+  // as today (fire on event+action match only). Filter mismatches are
+  // counted in the response's `skipped` array with a reason.
+  payload_filter?: Record<string, unknown>
 }
 
 type WebhookConfig = {
@@ -150,6 +163,10 @@ function lookup(ctx: unknown, path: string): unknown {
 //   - t.action is null (= "any action of this event") OR
 //     t.action equals the delivery's action.
 //
+// Payload-shape filtering happens AFTER this in the request handler,
+// so the cheap event/action filter shrinks the candidate set before
+// we do any payload walks.
+//
 // Trigger.action is normalized to null at load time, so the strict
 // equality below works for both null payloads and absent-field configs.
 function findMatching(
@@ -164,6 +181,45 @@ function findMatching(
     const actionOk = t.action === null || t.action === action
     return actionOk
   })
+}
+
+// Evaluate a trigger's payload_filter against the parsed payload.
+// Returns null on match (= no reason to skip), or a string reason
+// describing the first mismatched key. Empty/absent filters match
+// anything.
+function evaluatePayloadFilter(
+  filter: Record<string, unknown> | undefined,
+  payload: unknown,
+): string | null {
+  if (!filter) return null
+  for (const [path, expected] of Object.entries(filter)) {
+    const actual = lookup(payload, path)
+    if (expected === "*") {
+      // "* = any truthy/non-empty value". Treats empty string,
+      // empty object, null, undefined as "absent". Empty arrays
+      // also count as absent — `[]` for `labels` shouldn't match a
+      // "has labels" filter.
+      if (
+        actual === undefined ||
+        actual === null ||
+        actual === "" ||
+        (Array.isArray(actual) && actual.length === 0) ||
+        (typeof actual === "object" &&
+          actual !== null &&
+          Object.keys(actual as object).length === 0)
+      ) {
+        return `payload.${path} is absent/empty`
+      }
+      continue
+    }
+    // Scalar equality. JSON.stringify normalizes both sides so
+    // numbers, booleans, and strings compare cleanly without us
+    // having to think about JS coercion rules.
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      return `payload.${path} = ${JSON.stringify(actual)} (expected ${JSON.stringify(expected)})`
+    }
+  }
+  return null
 }
 
 // Trigger as it lives in memory after normalization. action is always
@@ -504,6 +560,38 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
           : undefined
       const sender = typeof senderLogin === "string" ? senderLogin : null
 
+      // Synthetic booleans for prompt templates. The mustache-ish
+      // renderer can only do path lookup; it can't evaluate "is this
+      // field present?" or "is this string non-empty?" without help.
+      // Computing these once per delivery (rather than per-trigger)
+      // keeps the template context consistent across triggers and
+      // avoids surprising operators with renderer-internal logic.
+      const ev = (payload as Record<string, unknown> | null) ?? {}
+      const issuePR = lookup(ev, "issue.pull_request")
+      const reviewBody = lookup(ev, "review.body")
+      const reviewState = lookup(ev, "review.state")
+      const checkConclusion =
+        lookup(ev, "check_suite.conclusion") ??
+        lookup(ev, "check_run.conclusion")
+      const synthetics = {
+        // True when the issue_comment event fired on a PR (rather than
+        // a regular issue). issue.pull_request is an object on PRs and
+        // missing on issues.
+        is_pr_comment:
+          issuePR !== undefined && issuePR !== null && issuePR !== "",
+        // True when a pull_request_review.submitted event has
+        // substantive body text (i.e. it's a real comment, not just a
+        // wrapper around inline comments which fire their own events).
+        is_review_with_body:
+          typeof reviewBody === "string" && reviewBody.trim() !== "",
+        // The review.state value, lowercased, or null. Useful for
+        // templates that branch on approve/changes_requested/commented.
+        review_state:
+          typeof reviewState === "string" ? reviewState.toLowerCase() : null,
+        // True when a check_suite/check_run event reports failure.
+        is_ci_failure: checkConclusion === "failure",
+      }
+
       const matches = findMatching(triggers, event, action)
       const dispatched: string[] = []
       const skipped: Array<{ name: string; reason: string }> = []
@@ -526,11 +614,22 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
           }
         }
 
+        // Payload-shape filter. Lets a trigger declare "fire only when
+        // payload.check_suite.conclusion = 'failure'" without spinning
+        // up a session that immediately BLOCKED-exits. Cheaper than
+        // the agent's runtime check by an entire LLM call.
+        const filterReason = evaluatePayloadFilter(t.payload_filter, payload)
+        if (filterReason) {
+          skipped.push({ name: t.name, reason: filterReason })
+          continue
+        }
+
         const prompt = renderTemplate(t.prompt_template, {
           event,
           action,
           delivery_id: deliveryId,
           payload,
+          ...synthetics,
         })
         // Fire-and-forget. dispatchOne catches its own errors so a
         // failing trigger doesn't poison the response.
