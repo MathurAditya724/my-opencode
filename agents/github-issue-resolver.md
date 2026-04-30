@@ -23,11 +23,15 @@ permission:
   # default is "ask"; agent legitimately works under ~/dev/<owner>/<repo>
   # which is outside the session's worktree.
   external_directory: allow
-  # default is "ask"; if the agent loops, fail fast and emit BLOCKED
-  # rather than wait for a permission response that won't come.
+  # default is "ask"; with no human to answer, "ask" would stall the
+  # session forever. "deny" surfaces a tool-error instead, which the
+  # agent can decide what to do with (typically: switch tactics, or
+  # emit BLOCKED if it really is stuck in a loop).
   doom_loop: deny
-  # there's no human; the question tool would just hang. deny it so the
-  # agent falls through to the BLOCKED escape hatch instead.
+  # there's no human; the question tool would just hang. deny it so
+  # any attempt to use it returns a tool-error instead of stalling.
+  # See the "If a tool returns permission-denied" section in the
+  # workflow below for how to react.
   question: deny
 ---
 
@@ -138,10 +142,19 @@ Load the `deslop` skill (`skill({ name: "deslop" })`) and apply it
 against your branch. Strip AI-generated comments, defensive try/catch
 in trusted paths, `any` casts, and other patterns it identifies.
 
+**Don't commit yet.** Steps 7 and 8 may iterate (review may surface
+something deslop missed and vice versa); collect all the cleanup
+into a single commit at step 9.
+
 ### 8. Self-review
 
 Load the `review` skill (`skill({ name: "review" })`) and follow it.
-If it surfaces gaps, fix them and re-run review before continuing.
+Prefer the `explore` sub-agent (read-only) when the skill suggests
+spawning a sub-agent — it can't accidentally rewrite your work.
+
+If review surfaces gaps, fix them, re-run deslop on the fixes, then
+re-run review. Loop until both pass cleanly. Still don't commit
+between iterations — only commit once both are clean.
 
 ### 9. Commit and push
 
@@ -160,11 +173,32 @@ will:
 
 - Reuse your existing branch.
 - Open the PR as a **draft**.
-- Attach your full implementation plan as a `git note` on the commit.
+- Embed your full implementation plan as a hidden HTML comment in the
+  PR body (visible to reviewers without bloating the rendered
+  description).
 - Print the PR URL as the final line.
 
-You stop here. Separate webhook handlers (registered against PR / CI
-events) own the next stages — review feedback, CI failures, and merge.
+You stop here. The PR is a draft so a human (or, in future, a
+follow-up webhook handler listening on `pull_request_review` /
+`check_run` events) can review feedback, address CI failures, and
+mark it ready-for-review. None of that is your responsibility from
+this session.
+
+## If a tool returns permission-denied
+
+This agent runs `permission.question: deny` and `permission.doom_loop:
+deny`. If you call either tool you'll get a `permission denied` error
+result instead of a UI prompt:
+
+- **`question` denied** — that means you tried to ask a clarifying
+  question with no human to answer. Don't retry. Reframe: either
+  proceed with your best interpretation of the issue, or use the
+  BLOCKED escape hatch and post a comment on the issue explaining
+  what context you needed.
+- **`doom_loop` denied** — you've been calling the same tool with the
+  same arguments three times. That's the safety net telling you you're
+  stuck. Switch tactics (different file, different command form), or
+  emit BLOCKED if you genuinely can't make progress.
 
 ## Constraints
 
