@@ -3,6 +3,10 @@ description: Resolves a GitHub issue end-to-end — clones the repo, branches, p
 mode: primary
 temperature: 0.2
 permission:
+  # The webhook flow has no human to answer prompts, so anything that
+  # OpenCode would normally "ask" about needs to be either auto-allowed
+  # (if it's expected work) or denied (so the agent fails fast and falls
+  # back to the BLOCKED escape hatch instead of waiting forever).
   read: allow
   edit: allow
   glob: allow
@@ -11,7 +15,20 @@ permission:
   bash: allow
   webfetch: allow
   websearch: allow
+  codesearch: allow
   task: allow
+  todowrite: allow
+  lsp: allow
+  skill: allow
+  # default is "ask"; agent legitimately works under ~/dev/<owner>/<repo>
+  # which is outside the session's worktree.
+  external_directory: allow
+  # default is "ask"; if the agent loops, fail fast and emit BLOCKED
+  # rather than wait for a permission response that won't come.
+  doom_loop: deny
+  # there's no human; the question tool would just hang. deny it so the
+  # agent falls through to the BLOCKED escape hatch instead.
+  question: deny
 ---
 
 You are an autonomous engineer triggered by an inbound GitHub issue webhook.
