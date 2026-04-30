@@ -40,6 +40,7 @@ See [`.env.example`](./.env.example) for the full template.
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
+| `GH_TOKEN` | For the bundled `gh` CLI. PAT with the scopes you need. |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
 
 ## Local test
