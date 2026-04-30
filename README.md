@@ -9,8 +9,12 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (one default trigger: issue assigned → `github-issue-resolver`). Activates on container start once you set `GITHUB_WEBHOOK_SECRET` — the env var plus the bundled file are all you need. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
-- **Bundled agent: [`github-issue-resolver`](./agents/github-issue-resolver.md)** — autonomous "issue assigned → branch → plan → implement → draft PR" workflow, designed to be invoked by the webhook plugin or directly via `@github-issue-resolver`. Permissions are pre-broadened (incl. `external_directory`) so the agent never stalls waiting for an approval prompt that no human will answer.
+- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (7 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
+- **Bundled agents** (all `mode: primary`, permissions pre-broadened so they don't stall on approval prompts):
+  - [`github-issue-resolver`](./agents/github-issue-resolver.md) — issue assigned → branch → plan → implement → draft PR.
+  - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review → reads diff + linked issue → posts an honest review (APPROVE / REQUEST_CHANGES / COMMENT) via `gh pr review`.
+  - [`ci-fixer`](./agents/ci-fixer.md) — `check_suite.completed` with `conclusion: failure` → diagnoses the failure → pushes the smallest fix → comments on the PR. Capped at 3 attempts per PR.
+  - [`pr-comment-responder`](./agents/pr-comment-responder.md) — review comment / PR comment / review submitted → triages → fixes if actionable, replies in either case.
 - **Bundled skills** (loadable on demand by any agent via the `skill` tool):
   - [`pr`](./skills/pr/SKILL.md) — open a draft PR with the implementation plan attached as a git note.
   - [`review`](./skills/review/SKILL.md) — self-review the diff (and PR description) before merge.
@@ -63,17 +67,46 @@ into agent sessions via the in-process SDK client.
 ### Default behavior
 
 The image ships with [`webhooks.json`](./webhooks.json) baked in at
-`~/.config/opencode/webhooks.json`. It defines **one trigger**: when an
-issue is assigned to someone, run the [`github-issue-resolver`](./agents/github-issue-resolver.md) agent against that
-repo and issue.
+`~/.config/opencode/webhooks.json`. It defines **7 triggers** that
+together cover an issue's full lifecycle through merge:
+
+| Trigger | GitHub event (`event.action`) | Agent | What happens |
+|---|---|---|---|
+| `issue-assigned` | `issues.assigned` | `github-issue-resolver` | Clone, branch, plan, implement, open draft PR |
+| `pr-opened` | `pull_request.opened` | `pr-reviewer` | Review the PR (APPROVE / REQUEST_CHANGES / COMMENT) |
+| `pr-ready-for-review` | `pull_request.ready_for_review` | `pr-reviewer` | Same — drafts get reviewed when they flip to ready |
+| `ci-failed` | `check_suite.completed` | `ci-fixer` | If conclusion=failure: read logs, push the smallest fix to the PR (capped at 3 attempts) |
+| `pr-review-comment` | `pull_request_review_comment.created` | `pr-comment-responder` | Triage inline review comments, fix-and-reply or just-reply |
+| `pr-issue-comment` | `issue_comment.created` (on PRs) | `pr-comment-responder` | Same for top-level PR comments |
+| `pr-review-submitted` | `pull_request_review.submitted` | `pr-comment-responder` | Same for review-with-body submissions |
 
 Once `GITHUB_WEBHOOK_SECRET` is set in your environment, the plugin
 boots its listener on port 5050 automatically. No further setup needed.
 
+### Stopping the bot from triggering itself
+
+Every trigger except `issue-assigned` has a baked-in
+`ignore_authors: ["github-actions[bot]"]` so workflow-driven check
+events don't fire the agents. To also stop the bot from re-firing
+itself when ITS own commits / comments / reviews emit fresh webhooks,
+set the env var:
+
+```
+BOT_LOGIN=<your-bot-or-PAT-owner-username>
+```
+
+(Or `BOT_LOGINS=foo,bar` for multiple accounts.) The plugin appends
+this to every trigger's `ignore_authors` at boot — no need to edit
+`webhooks.json`.
+
+If you don't set this, the bot can loop: ci-fixer's commit emits a
+new `check_suite` event whose sender is the bot, which (without
+filtering) fires ci-fixer again.
+
 ### Overriding the default config
 
-The bundled file is fine for the "issue assigned → resolve it" flow
-out of the box. To customize:
+The bundled file gives you all four agent flows out of the box. To
+customize:
 
 - **Edit before building** — change [`webhooks.json`](./webhooks.json) in
   this repo and rebuild the image. Triggers stay version-controlled.
