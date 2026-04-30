@@ -20,5 +20,5 @@ LICENSE
 Thumbs.db
 
 # Build artifacts / logs
-node_modules
+**/node_modules
 *.log

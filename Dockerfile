@@ -176,6 +176,45 @@ COPY --chown=developer:developer \
      opencode-user-config.json \
      /home/developer/.config/opencode/opencode.json
 
+# Bundled agents (e.g. github-issue-resolver). Copied into the user-level
+# agents dir so they're discoverable from any session, including ones the
+# webhook plugin spawns programmatically.
+COPY --chown=developer:developer agents \
+     /home/developer/.config/opencode/agents
+
+# Bundled plugins (e.g. github-webhooks). OpenCode auto-loads any
+# .ts/.js file in this directory at startup. The sibling package.json
+# declares the npm deps the plugins import (@opencode-ai/plugin); we
+# `bun install` them once at build time so OpenCode doesn't have to do
+# it on every container start.
+#
+# IMPORTANT: do NOT mount a runtime volume over /home/developer/.config/
+# opencode — it would mask the baked-in node_modules and the plugin
+# loader would fail at startup with `Cannot find module '@opencode-ai/
+# plugin'`. Persistent state (sessions, auth) lives at ~/dev/.opencode
+# already via the symlink set up below; that's the only directory you
+# should attach a volume to.
+COPY --chown=developer:developer plugins \
+     /home/developer/.config/opencode/plugins
+COPY --chown=developer:developer opencode-config-package.json \
+     /home/developer/.config/opencode/package.json
+COPY --chown=developer:developer opencode-config-bun.lock \
+     /home/developer/.config/opencode/bun.lock
+RUN cd /home/developer/.config/opencode \
+ && bun install --frozen-lockfile --production \
+ && rm -rf ~/.bun/install/cache
+
+# Default config for the github-webhooks plugin: one trigger that wires
+# the `issues.assigned` event to the bundled `github-issue-resolver`
+# agent. The plugin reads this on startup; without it, the listener
+# stays off (no surprise port). Override per-deploy by setting
+# WEBHOOKS_CONFIG to a path on your persistent volume (e.g.
+# ~/dev/.opencode/webhooks.json) and putting your own file there. The
+# HMAC secret is intentionally NOT in this file — set
+# GITHUB_WEBHOOK_SECRET as an env var so it isn't baked into the image.
+COPY --chown=developer:developer webhooks.json \
+     /home/developer/.config/opencode/webhooks.json
+
 # Tiny entrypoint that mkdir's ~/dev/.opencode at runtime so a single
 # Railway Volume mounted at ~/dev persists projects + OpenCode session/auth
 # data together (~/.local/share/opencode is symlinked into it).
@@ -184,10 +223,13 @@ COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # No VOLUME directive — Railway rejects them. Attach a Railway Volume at
 # /home/developer/dev (~/dev) via the dashboard for persistence; both
 # projects you clone there and OpenCode session/auth data live in it.
-EXPOSE 4096
+# 4096 = opencode web UI; 5050 = plugin's webhook listener (only opens
+# if WEBHOOKS_CONFIG points at a config file with at least one trigger).
+EXPOSE 4096 5050
 WORKDIR /home/developer/dev
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
-# to 4096 locally.
+# to 4096 locally. WEBHOOK_PORT (default 5050) is what the github-webhooks
+# plugin binds its listener to.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec opencode web --hostname 0.0.0.0 --port ${PORT:-4096}"]
