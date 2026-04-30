@@ -32,7 +32,10 @@
       "action": "completed",
       "agent": "ci-fixer",
       "ignore_authors": ["github-actions[bot]"],
-      "prompt_template": "A check_suite has completed with conclusion '{{ payload.check_suite.conclusion }}' on a branch with PRs.\n\nRepo: {{ payload.repository.full_name }}\nCheck suite ID: {{ payload.check_suite.id }}\nHead SHA: {{ payload.check_suite.head_sha }}\nHead branch: {{ payload.check_suite.head_branch }}\nConclusion: {{ payload.check_suite.conclusion }}\nPull requests: {{ payload.check_suite.pull_requests }}\n\nIf conclusion is anything other than 'failure' (success / neutral / cancelled / skipped / timed_out / action_required), emit BLOCKED: nothing to fix and stop.\n\nIf conclusion IS 'failure', follow your standard ci-fixer workflow: check the attempt budget on the PR, find and check out the PR, read the failed job logs, categorize the failure, reproduce locally if possible, push the smallest fix, and post a 'ci-fixer:'-prefixed comment on the PR. If the budget is exhausted (3 prior attempts), emit BLOCKED instead."
+      "payload_filter": {
+        "check_suite.conclusion": "failure"
+      },
+      "prompt_template": "A check_suite has failed on a branch with PRs. Diagnose and fix it.\n\nRepo: {{ payload.repository.full_name }}\nCheck suite ID: {{ payload.check_suite.id }}\nHead SHA: {{ payload.check_suite.head_sha }}\nHead branch: {{ payload.check_suite.head_branch }}\nPull requests: {{ payload.check_suite.pull_requests }}\n\nFollow your standard ci-fixer workflow: check the attempt budget on the PR, find and check out the PR, read the failed job logs, categorize the failure, reproduce locally if possible, push the smallest fix, and post a 'ci-fixer:'-prefixed comment on the PR. If the budget is exhausted (3 prior attempts), emit BLOCKED instead."
     },
     {
       "name": "pr-review-comment",
@@ -48,7 +51,10 @@
       "action": "created",
       "agent": "pr-comment-responder",
       "ignore_authors": ["github-actions[bot]"],
-      "prompt_template": "Someone left a comment on an issue or PR. Triage and respond — but only if it's a PR comment.\n\nRepo: {{ payload.repository.full_name }}\nIssue/PR number: {{ payload.issue.number }}\nIs PR? {{ payload.issue.pull_request }}\nComment ID: {{ payload.comment.id }}\nComment author: {{ payload.comment.user.login }}\nComment URL: {{ payload.comment.html_url }}\n\nComment body:\n---\n{{ payload.comment.body }}\n---\n\nThe issue_comment event fires for both issues AND PRs. If `payload.issue.pull_request` is empty/missing, this is an issue comment (not a PR), and you should emit BLOCKED: not a PR comment and stop. Otherwise this is a top-level PR comment — follow your standard workflow."
+      "payload_filter": {
+        "issue.pull_request": "*"
+      },
+      "prompt_template": "Someone left a top-level comment on a pull request. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR number: {{ payload.issue.number }}\nComment ID: {{ payload.comment.id }}\nComment author: {{ payload.comment.user.login }}\nComment URL: {{ payload.comment.html_url }}\n\nComment body:\n---\n{{ payload.comment.body }}\n---\n\nFollow your standard pr-comment-responder workflow."
     },
     {
       "name": "pr-review-submitted",
@@ -56,7 +62,10 @@
       "action": "submitted",
       "agent": "pr-comment-responder",
       "ignore_authors": ["github-actions[bot]"],
-      "prompt_template": "Someone submitted a PR review. Triage and respond if it has substantive comment content.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }}\nHead SHA: {{ payload.pull_request.head.sha }}\nReview ID: {{ payload.review.id }}\nReview state: {{ payload.review.state }}\nReview author: {{ payload.review.user.login }}\nReview URL: {{ payload.review.html_url }}\n\nReview body:\n---\n{{ payload.review.body }}\n---\n\nIf review.state is 'commented' and review.body is empty, this is just a wrapper around inline comments (which fire pull_request_review_comment events of their own); emit BLOCKED: empty review wrapper and stop. Otherwise treat the review body as a top-level PR comment and follow your standard workflow."
+      "payload_filter": {
+        "review.body": "*"
+      },
+      "prompt_template": "Someone submitted a PR review with a substantive body. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }}\nHead SHA: {{ payload.pull_request.head.sha }}\nReview ID: {{ payload.review.id }}\nReview state: {{ payload.review.state }} (review_state: {{ review_state }})\nReview author: {{ payload.review.user.login }}\nReview URL: {{ payload.review.html_url }}\n\nReview body:\n---\n{{ payload.review.body }}\n---\n\nIf review_state is 'approved' and the body is just a brief acknowledgement (e.g. 'lgtm', 'nice', '👍'), don't reply — silence is the right response to an approve. Reply only when the body has a concrete suggestion, question, or concern. For state='changes_requested' or state='commented' with substantive content, follow your standard pr-comment-responder workflow: triage as actionable or not, fix if actionable, reply in-thread either way."
     }
   ]
 }

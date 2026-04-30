@@ -70,15 +70,23 @@ The image ships with [`webhooks.json`](./webhooks.json) baked in at
 `~/.config/opencode/webhooks.json`. It defines **7 triggers** that
 together cover an issue's full lifecycle through merge:
 
-| Trigger | GitHub event (`event.action`) | Agent | What happens |
+| Trigger | GitHub event (`event.action`) | Plugin-level filter | Agent |
 |---|---|---|---|
-| `issue-assigned` | `issues.assigned` | `github-issue-resolver` | Clone, branch, plan, implement, open draft PR |
-| `pr-opened` | `pull_request.opened` | `pr-reviewer` | Review the PR (APPROVE / REQUEST_CHANGES / COMMENT) |
-| `pr-ready-for-review` | `pull_request.ready_for_review` | `pr-reviewer` | Same — drafts get reviewed when they flip to ready |
-| `ci-failed` | `check_suite.completed` | `ci-fixer` | If conclusion=failure: read logs, push the smallest fix to the PR (capped at 3 attempts) |
-| `pr-review-comment` | `pull_request_review_comment.created` | `pr-comment-responder` | Triage inline review comments, fix-and-reply or just-reply |
-| `pr-issue-comment` | `issue_comment.created` (on PRs) | `pr-comment-responder` | Same for top-level PR comments |
-| `pr-review-submitted` | `pull_request_review.submitted` | `pr-comment-responder` | Same for review-with-body submissions |
+| `issue-assigned` | `issues.assigned` | — | `github-issue-resolver` |
+| `pr-opened` | `pull_request.opened` | — | `pr-reviewer` |
+| `pr-ready-for-review` | `pull_request.ready_for_review` | — | `pr-reviewer` |
+| `ci-failed` | `check_suite.completed` | `check_suite.conclusion = "failure"` | `ci-fixer` |
+| `pr-review-comment` | `pull_request_review_comment.created` | — | `pr-comment-responder` |
+| `pr-issue-comment` | `issue_comment.created` | `issue.pull_request` exists (skips issue-only comments) | `pr-comment-responder` |
+| `pr-review-submitted` | `pull_request_review.submitted` | `review.body` non-empty (skips empty review wrappers) | `pr-comment-responder` |
+
+The `Plugin-level filter` column refers to the trigger's
+`payload_filter` field. When set, the plugin skips dispatch when the
+filter doesn't match — no agent session is created, no LLM tokens
+spent. Skipped triggers surface in the response's `skipped` array
+with a per-key reason (e.g. `payload.check_suite.conclusion =
+"success" (expected "failure")`), so you can see at a glance which
+triggers passed/skipped on each delivery.
 
 Once `GITHUB_WEBHOOK_SECRET` is set in your environment, the plugin
 boots its listener on port 5050 automatically. No further setup needed.
@@ -148,8 +156,10 @@ Field reference:
 | `triggers[].event` | ✓ | GitHub event header (`issues`, `pull_request`, `push`, ...). Use `"*"` to match anything. |
 | `triggers[].action` | optional | If set, must match the payload's `action` exactly. Omit/`null` to match any action of this event. |
 | `triggers[].agent` | ✓ | Agent name to invoke (built-in or from `agents/`). |
-| `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. |
+| `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. Synthetic booleans available: `is_pr_comment`, `is_review_with_body`, `review_state`, `is_ci_failure`. |
 | `triggers[].cwd` | optional | Override the session's working directory. Falls back to `default_cwd`, then to OpenCode's project root. |
+| `triggers[].ignore_authors` | optional | List of GitHub logins to filter out (case-insensitive, exact match) on `payload.sender.login`. Use this to stop the bot from triggering itself. |
+| `triggers[].payload_filter` | optional | Object of dotted-path → expected-value gates. `"*"` matches any non-empty value; other values match scalars after JSON normalization. Multiple keys AND. Use to cheaply gate "fire only when payload.X = Y" without spinning up a session that BLOCKED-exits. |
 | `port` | optional | Listener port; defaults to `5050` or `WEBHOOK_PORT`. |
 | `secret` | optional | HMAC secret. Falls back to `GITHUB_WEBHOOK_SECRET`. |
 | `max_concurrent` | optional | Cap on concurrent agent sessions across all triggers (default 2). |
