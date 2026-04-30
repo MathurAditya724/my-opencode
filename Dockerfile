@@ -68,12 +68,6 @@ RUN mkdir -p /out/usr/local/bin \
       -o /out/usr/local/bin/yq \
  && chmod +x /out/usr/local/bin/yq
 
-# Sentry CLI. Env var on the right of the pipe so bash inherits it.
-RUN mkdir -p /out/usr/local/bin \
- && curl -fsSL https://cli.sentry.dev/install \
-    | SENTRY_INSTALL_DIR=/out/usr/local/bin \
-      bash -s -- --no-modify-path --no-completions
-
 # Pre-fetch the gh apt keyring while curl is handy — saves bootstrapping
 # curl in the runtime stage just to grab one file.
 RUN install -d -m 0755 /out/etc/apt/keyrings \
@@ -128,7 +122,6 @@ RUN chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
 
 # Only copy bun's bin/ — the rest is installer scratch.
 COPY --from=downloader /out/usr/local/bin/yq     /usr/local/bin/yq
-COPY --from=downloader /out/usr/local/bin/sentry /usr/local/bin/sentry
 COPY --from=downloader /out/opt/bun/bin          /opt/bun/bin
 RUN ln -s /opt/bun/bin/bun  /usr/local/bin/bun \
  && ln -s /opt/bun/bin/bunx /usr/local/bin/bunx
