@@ -198,8 +198,10 @@ COPY --chown=developer:developer plugins \
      /home/developer/.config/opencode/plugins
 COPY --chown=developer:developer opencode-config-package.json \
      /home/developer/.config/opencode/package.json
+COPY --chown=developer:developer opencode-config-bun.lock \
+     /home/developer/.config/opencode/bun.lock
 RUN cd /home/developer/.config/opencode \
- && bun install --production \
+ && bun install --frozen-lockfile --production \
  && rm -rf ~/.bun/install/cache
 
 # Default config for the github-webhooks plugin: one trigger that wires

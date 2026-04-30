@@ -30,10 +30,20 @@ intervention, while staying conservative about scope.
    ```sh
    gh repo clone <owner>/<repo> ~/dev/<owner>/<repo> -- --depth=50
    ```
-   If the directory already exists, `cd` into it and run `git fetch --all`,
-   then check out the repo's default branch (resolve it via
-   `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`)
-   and `git pull`.
+   If the directory already exists, an earlier issue-resolution session
+   may have left it on a feature branch with uncommitted changes. Reset
+   defensively before doing anything else:
+   ```sh
+   cd ~/dev/<owner>/<repo>
+   DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+   git fetch --all --prune
+   git reset --hard "origin/$DEFAULT_BRANCH"   # discard local changes
+   git clean -fd                               # remove untracked files
+   git checkout "$DEFAULT_BRANCH"
+   ```
+   This guarantees you start from a clean tree on the default branch.
+   If the repo had uncommitted work that mattered, that's the previous
+   run's bug — not yours to recover.
 
 2. **Create a feature branch** named `issue-<number>-<short-slug>`:
    ```sh

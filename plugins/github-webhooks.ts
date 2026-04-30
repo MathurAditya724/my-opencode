@@ -10,9 +10,10 @@
 //   - The SDK client we get from ctx.client targets THIS server, no
 //     loopback HTTP and no cold-boot race.
 //   - Trigger config is a JSON file (default ~/.config/opencode/webhooks.json,
-//     overridable with WEBHOOKS_CONFIG), kept out of opencode.json
-//     because that file's schema doesn't admit our experimental.webhook
-//     extension.
+//     overridable with WEBHOOKS_CONFIG). This is the documented user
+//     surface — version-controlled in the repo, edited at deploy time,
+//     or pointed at a path on the persistent volume to mutate without
+//     rebuilding.
 //
 // Trade-off: an unhandled rejection here can crash the OpenCode server.
 // We catch aggressively at the dispatch boundary and rely on the
@@ -50,10 +51,12 @@ type WebhookConfig = {
   // Max concurrent agent sessions. Default 2.
   max_concurrent?: number
   // Default working directory for sessions when a trigger doesn't
-  // specify one. Falls back to ctx.directory (project root).
+  // specify one. Falls back to ctx.directory (whatever opencode hands
+  // us at plugin-load time; usually the project root).
   default_cwd?: string
   // Path to the deduplication SQLite file. Default
-  // <project>/.opencode/github-webhooks.sqlite.
+  // ~/dev/.opencode/github-webhooks.sqlite — co-located with opencode's
+  // own session data on the persistent Railway volume.
   db_path?: string
   // Hard cap on persisted webhook deliveries. Default 1000.
   retention?: number
@@ -202,12 +205,14 @@ function makeSemaphore(limit: number) {
 
 export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   // Process-level guard. A bug in our dispatch path must not take down
-  // the host opencode server. We log and swallow.
-  if (!(globalThis as { __ghWebhookGuard?: boolean }).__ghWebhookGuard) {
+  // the host opencode server. We log and swallow. Gated so we only ever
+  // install the listener once even if the plugin is re-initialized.
+  const guard = globalThis as { __ghWebhookGuard?: boolean }
+  if (!guard.__ghWebhookGuard) {
     process.on("unhandledRejection", (err) => {
       console.error("[github-webhooks] unhandledRejection:", err)
     })
-    ;(globalThis as { __ghWebhookGuard?: boolean }).__ghWebhookGuard = true
+    guard.__ghWebhookGuard = true
   }
 
   const cfg = await readWebhookConfig()
@@ -306,6 +311,12 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     await sem.acquire()
     const abort = new AbortController()
     const timer = setTimeout(() => abort.abort(), timeoutMs)
+    // Don't keep the event loop alive just for the abort timer — on
+    // SIGTERM the dispatch should either complete naturally or be
+    // canceled by the drain logic, NOT block exit because a 30-min
+    // timer hasn't fired yet. Bun supports unref(); guard so the call
+    // is a no-op on runtimes that don't.
+    timer.unref?.()
     try {
       const session = await ctx.client.session.create({
         body: { title: `[webhook/${t.name}] ${t.event}` },
@@ -383,7 +394,30 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
         )
       }
 
+      // Body size cap. GitHub caps webhook payloads at 25 MB; anything
+      // larger is either a misbehaving client or an attacker trying to
+      // OOM us via `await req.text()`. Refuse based on the
+      // Content-Length header before we ever read the body. (The same
+      // header is part of what HMAC will protect anyway, so a forged
+      // size would also fail signature verification.)
+      const MAX_BODY_BYTES = 25 * 1024 * 1024
+      const declaredLength = Number(req.headers.get("content-length") ?? "0")
+      if (declaredLength > MAX_BODY_BYTES) {
+        return Response.json(
+          { error: "payload too large" },
+          { status: 413 },
+        )
+      }
+
       const rawBody = await req.text()
+      // Defense in depth: if a client sent without Content-Length or
+      // lied about it, enforce the same cap on the actual bytes.
+      if (rawBody.length > MAX_BODY_BYTES) {
+        return Response.json(
+          { error: "payload too large" },
+          { status: 413 },
+        )
+      }
       const signature = req.headers.get("x-hub-signature-256")
       if (!verifyGithubSignature(rawBody, signature, secret)) {
         return Response.json({ error: "invalid signature" }, { status: 401 })
@@ -494,8 +528,13 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       )
     }
   }
-  process.on("SIGTERM", () => void onShutdown("SIGTERM"))
-  process.on("SIGINT", () => void onShutdown("SIGINT"))
+  // process.once (not on) so we don't accumulate listeners if the
+  // plugin is ever re-initialized in the same process (which OpenCode
+  // doesn't currently do, but the protection is cheap). A second
+  // SIGTERM after the first will hit Node's default handler and force
+  // exit — which is what an operator pressing ^C twice usually wants.
+  process.once("SIGTERM", () => void onShutdown("SIGTERM"))
+  process.once("SIGINT", () => void onShutdown("SIGINT"))
 
   // Plugin hooks. We don't currently need any event hooks — the entire
   // value of this plugin is the listener it opened above. Returning {}

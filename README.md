@@ -9,7 +9,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) configured with one default trigger (issue assigned → `github-issue-resolver`). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
+- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (one default trigger: issue assigned → `github-issue-resolver`). Activates on container start once you set `GITHUB_WEBHOOK_SECRET` — the env var plus the bundled file are all you need. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
 - **Bundled agent: [`github-issue-resolver`](./agents/github-issue-resolver.md)** — autonomous "issue assigned → branch → plan → implement → PR" workflow, designed to be invoked by the webhook plugin or directly via `@github-issue-resolver`.
 - Non-root `developer` user. OpenCode starts in `~/dev`. Mount a single persistent volume at `~/dev` (= `/home/developer/dev`) to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `~/dev/.opencode`.
 
@@ -81,24 +81,26 @@ file — set `GITHUB_WEBHOOK_SECRET` as an env var instead.
 
 ### Config schema
 
+The minimum-viable trigger:
+
 ```json
 {
-  "port": 5050,
-  "max_concurrent": 2,
-  "timeout_ms": 1800000,
-  "retention": 1000,
   "triggers": [
     {
       "name": "issue-assigned",
       "event": "issues",
       "action": "assigned",
       "agent": "github-issue-resolver",
-      "prompt_template": "Resolve issue #{{ payload.issue.number }} ({{ payload.issue.title }}) in {{ payload.repository.full_name }}.\n\n{{ payload.issue.body }}",
-      "cwd": null
+      "prompt_template": "Resolve issue #{{ payload.issue.number }} in {{ payload.repository.full_name }}."
     }
   ]
 }
 ```
+
+The bundled [`webhooks.json`](./webhooks.json) is richer — its
+`prompt_template` interpolates the issue title, body, assignee, author,
+URL, and labels into a context-heavy prompt for the agent. Use that as
+the working reference when writing your own trigger.
 
 Field reference:
 
@@ -138,7 +140,9 @@ afterward — view it in OpenCode's UI like any other session.
 
 ### Health check
 
-`GET http://<host>:5050/healthz` returns `{ "ok": true, "plugin": "github-webhooks" }` once the listener is up. No auth required.
+`GET http://<host>:5050/healthz` (the plugin's port, not OpenCode's
+4096) returns `{ "ok": true, "plugin": "github-webhooks" }` once the
+listener is up. No auth required.
 
 ## Local test
 
