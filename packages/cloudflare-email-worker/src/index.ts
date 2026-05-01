@@ -1,50 +1,94 @@
-// Cloudflare Email Worker: GitHub notification → /webhooks/email.
+// Cloudflare Email Worker: dumb pipe in front of opencode-webhooks.
 //
-// Pipeline:
-//   1. Read message.from / message.to / Message-ID for observability.
-//   2. Match message.from against ALLOWED_SENDERS (static + /regex/).
-//      Drop unmatched mail without forwarding (Cloudflare won't bounce).
-//   3. Buffer the raw RFC822 body.
-//   4. HMAC-sha256 sign the body with EMAIL_WEBHOOK_SECRET.
-//   5. POST to SIDECAR_URL with the signature + envelope headers.
-//   6. On 5xx, throw so Cloudflare retries the email later. On 4xx, log
-//      and accept (those are permanent — bad signature, dedup hit, etc.).
+// Pipeline per inbound email:
+//   1. message.forward(FORWARD_TO) — unconditional, every email reaches
+//      the operator's real inbox so nothing is silently swallowed.
+//   2. If message.from is in ALLOWED_SENDERS, build a small JSON event
+//      from the headers we care about, HMAC-sign it, and POST to
+//      WEBHOOK_URL. Non-allowlisted mail is forward-only (no agent).
+//   3. On 5xx from the webhook, throw so Cloudflare retries the email.
+//      4xx is permanent (signature rejected, dedup hit, etc.) — accept.
+//
+// All RFC822 parsing stays out of the worker: the plugin already has
+// gh-api access for canonical state, and Cloudflare hands us a parsed
+// `message.headers` so we don't need to re-implement header decoding.
+
+// Sender allowlist for the webhook gate. Strings starting and ending
+// with "/" are treated as case-insensitive regex; everything else is
+// case-insensitive exact match against the bare address parsed out of
+// the From header.
+const ALLOWED_SENDERS: readonly string[] = [
+  "notifications@github.com",
+  "/^.*@github\\.com$/",
+]
 
 export interface Env {
-  ALLOWED_SENDERS: string // JSON-encoded string[]
-  SIDECAR_URL: string
+  WEBHOOK_URL: string
   EMAIL_WEBHOOK_SECRET: string
+  // Optional. If set, every inbound email is forwarded here verbatim
+  // (DKIM-preserving via Cloudflare's message.forward()). The address
+  // must be verified in Cloudflare Email Routing first.
+  FORWARD_TO?: string
 }
 
 type Pattern =
   | { kind: "exact"; value: string }
   | { kind: "regex"; re: RegExp }
 
+const COMPILED_PATTERNS: Pattern[] = compilePatterns(ALLOWED_SENDERS)
+
 export default {
   async email(message, env, _ctx) {
-    const patterns = parsePatterns(env.ALLOWED_SENDERS)
-    if (!matchesAnyPattern(message.from, patterns)) {
+    const messageId = message.headers.get("message-id") ?? ""
+
+    // 1. Always forward to the operator's inbox if configured. Wrap in
+    //    try/catch so a bad FORWARD_TO (unverified destination, etc.)
+    //    doesn't block webhook dispatch — log loudly and continue.
+    if (env.FORWARD_TO) {
+      try {
+        await message.forward(env.FORWARD_TO)
+      } catch (err) {
+        console.error(
+          `forward failed: to=${env.FORWARD_TO} message-id=${messageId} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
+    // 2. Webhook gate: only allowlisted senders trigger an agent run.
+    if (!matchesAnyPattern(message.from, COMPILED_PATTERNS)) {
       console.log(
-        `drop: from=${message.from} to=${message.to} (no allowlist match)`,
+        `webhook skipped: from=${message.from} (not in allowlist)`,
       )
       return
     }
 
-    const body = new Uint8Array(
-      await new Response(message.raw).arrayBuffer(),
+    const references = (message.headers.get("references") ?? "")
+      .split(/\s+/)
+      .filter(Boolean)
+
+    const payload = {
+      from: message.from,
+      to: message.to,
+      subject: message.headers.get("subject") ?? "",
+      message_id: messageId,
+      in_reply_to: message.headers.get("in-reply-to") ?? null,
+      references,
+      list_id: message.headers.get("list-id") ?? null,
+      x_github_reason: message.headers.get("x-github-reason") ?? null,
+      x_github_sender: message.headers.get("x-github-sender") ?? null,
+    }
+
+    const body = JSON.stringify(payload)
+    const sig = await hmacSha256Hex(
+      env.EMAIL_WEBHOOK_SECRET,
+      new TextEncoder().encode(body),
     )
 
-    const sig = await hmacSha256Hex(env.EMAIL_WEBHOOK_SECRET, body)
-    const messageId = message.headers.get("message-id") ?? ""
-
-    const res = await fetch(env.SIDECAR_URL, {
+    const res = await fetch(env.WEBHOOK_URL, {
       method: "POST",
       headers: {
-        "content-type": "message/rfc822",
+        "content-type": "application/json",
         "x-email-signature-256": `sha256=${sig}`,
-        "x-email-from": message.from,
-        "x-email-to": message.to,
-        "x-email-message-id": messageId,
       },
       body,
     })
@@ -52,33 +96,21 @@ export default {
     if (!res.ok) {
       const text = await res.text().catch(() => "")
       console.error(
-        `forward failed: status=${res.status} from=${message.from} message-id=${messageId} body=${text.slice(0, 200)}`,
+        `webhook failed: status=${res.status} from=${message.from} message-id=${messageId} body=${text.slice(0, 200)}`,
       )
-      // Re-throw on 5xx so Cloudflare retries; on 4xx accept (permanent).
       if (res.status >= 500) {
-        throw new Error(`sidecar ${res.status}`)
+        throw new Error(`webhook ${res.status}`)
       }
     }
   },
 } satisfies ExportedHandler<Env>
 
-function parsePatterns(raw: string): Pattern[] {
-  let arr: unknown
-  try {
-    arr = JSON.parse(raw)
-  } catch {
-    return []
-  }
-  if (!Array.isArray(arr)) return []
+function compilePatterns(raw: readonly string[]): Pattern[] {
   const out: Pattern[] = []
-  for (const s of arr) {
-    if (typeof s !== "string" || s.length === 0) continue
+  for (const s of raw) {
+    if (s.length === 0) continue
     if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
-      try {
-        out.push({ kind: "regex", re: new RegExp(s.slice(1, -1), "i") })
-      } catch {
-        // bad regex — skip
-      }
+      out.push({ kind: "regex", re: new RegExp(s.slice(1, -1), "i") })
       continue
     }
     out.push({ kind: "exact", value: s.toLowerCase() })

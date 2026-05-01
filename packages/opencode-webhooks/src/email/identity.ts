@@ -1,21 +1,34 @@
-// Map a GitHub notification email's headers to the GitHub entity it
-// references: (owner, repo, kind, number[, comment]).
+// Map a GitHub notification email to the GitHub entity it references:
+// (owner, repo, kind, number[, comment]).
 //
 // GitHub's notification Message-IDs follow predictable patterns:
 //
 //   <owner/repo/issues/N@github.com>
 //   <owner/repo/issues/comment/COMMENT_ID@github.com>
 //   <owner/repo/pull/N@github.com>
-//   <owner/repo/pull/N/c<COMMENT_ID>@github.com>           (issue-comment on PR)
-//   <owner/repo/pull/N/review/<REVIEW_ID>@github.com>
-//   <owner/repo/pull/N/r<COMMENT_ID>@github.com>           (inline review comment)
-//   <owner/repo/push/<sha>@github.com>                     (push notification — ignored)
+//   <owner/repo/pull/N/cN@github.com>           (issue-style comment on PR)
+//   <owner/repo/pull/N/review/N@github.com>     (review summary)
+//   <owner/repo/pull/N/rN@github.com>           (inline review comment)
+//   <owner/repo/push/<sha>@github.com>          (push notification — ignored)
 //
-// We resolve the entity via Message-ID + List-ID. The `In-Reply-To` and
-// `References` headers can also help when the Message-ID is for a
-// reply, but the patterns above are enough for the v1 surface.
+// We try Message-ID first, then In-Reply-To, then each References token —
+// per-event Message-IDs often don't match but the parent <…/issues/N>
+// or <…/pull/N> form usually shows up in In-Reply-To.
 
-import type { EmailHeaders } from "./parse"
+// Wire shape posted by the Cloudflare email worker. Mirrors
+// EmailEvent in the worker; kept as a structural type so we don't
+// share TypeScript files across packages.
+export type EmailEvent = {
+  from: string
+  to: string
+  subject: string
+  message_id: string
+  in_reply_to: string | null
+  references: string[]
+  list_id: string | null
+  x_github_reason: string | null
+  x_github_sender: string | null
+}
 
 export type EmailIdentity =
   | {
@@ -41,21 +54,12 @@ const ISSUE_RE =
 const PULL_RE =
   /^<?([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(c|r|review\/?)(\d+))?@github\.com>?$/i
 
-export function identifyEmail(headers: EmailHeaders): EmailIdentity {
-  // Candidates in priority order: Message-ID, In-Reply-To, then each
-  // token of References. GitHub's per-event Message-ID often doesn't
-  // match our regexes but In-Reply-To/References point at the canonical
-  // <owner/repo/issues/N@github.com> parent.
+export function identifyEmail(event: EmailEvent): EmailIdentity {
   const candidates: string[] = []
-  const messageId = headers.get("message-id")
-  if (messageId) candidates.push(messageId)
-  const inReplyTo = headers.get("in-reply-to")
-  if (inReplyTo) candidates.push(inReplyTo)
-  const references = headers.get("references")
-  if (references) {
-    for (const tok of references.split(/\s+/)) {
-      if (tok.length > 0) candidates.push(tok)
-    }
+  if (event.message_id) candidates.push(event.message_id)
+  if (event.in_reply_to) candidates.push(event.in_reply_to)
+  for (const tok of event.references) {
+    if (tok.length > 0) candidates.push(tok)
   }
 
   for (const candidate of candidates) {
