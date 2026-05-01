@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opencode-email-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "vars": {
+    "WEBHOOK_URL": "https://your-opencode-host.example.com:5050/webhooks/email"
+  }
+}

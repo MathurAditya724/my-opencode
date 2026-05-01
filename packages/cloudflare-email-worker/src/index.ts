@@ -6,13 +6,21 @@
 //      Drop unmatched mail without forwarding (Cloudflare won't bounce).
 //   3. Buffer the raw RFC822 body.
 //   4. HMAC-sha256 sign the body with EMAIL_WEBHOOK_SECRET.
-//   5. POST to SIDECAR_URL with the signature + envelope headers.
+//   5. POST to WEBHOOK_URL with the signature + envelope headers.
 //   6. On 5xx, throw so Cloudflare retries the email later. On 4xx, log
 //      and accept (those are permanent — bad signature, dedup hit, etc.).
 
+// Sender allowlist. Strings starting and ending with "/" are treated
+// as case-insensitive regex (slashes are delimiters); everything else
+// is exact-match (case-insensitive) against the bare address parsed
+// out of an RFC5322 From header. Edit + redeploy to change.
+const ALLOWED_SENDERS: readonly string[] = [
+  "notifications@github.com",
+  "/^.*@github\\.com$/",
+]
+
 export interface Env {
-  ALLOWED_SENDERS: string // JSON-encoded string[]
-  SIDECAR_URL: string
+  WEBHOOK_URL: string
   EMAIL_WEBHOOK_SECRET: string
 }
 
@@ -20,10 +28,11 @@ type Pattern =
   | { kind: "exact"; value: string }
   | { kind: "regex"; re: RegExp }
 
+const COMPILED_PATTERNS: Pattern[] = compilePatterns(ALLOWED_SENDERS)
+
 export default {
   async email(message, env, _ctx) {
-    const patterns = parsePatterns(env.ALLOWED_SENDERS)
-    if (!matchesAnyPattern(message.from, patterns)) {
+    if (!matchesAnyPattern(message.from, COMPILED_PATTERNS)) {
       console.log(
         `drop: from=${message.from} to=${message.to} (no allowlist match)`,
       )
@@ -37,7 +46,7 @@ export default {
     const sig = await hmacSha256Hex(env.EMAIL_WEBHOOK_SECRET, body)
     const messageId = message.headers.get("message-id") ?? ""
 
-    const res = await fetch(env.SIDECAR_URL, {
+    const res = await fetch(env.WEBHOOK_URL, {
       method: "POST",
       headers: {
         "content-type": "message/rfc822",
@@ -56,29 +65,18 @@ export default {
       )
       // Re-throw on 5xx so Cloudflare retries; on 4xx accept (permanent).
       if (res.status >= 500) {
-        throw new Error(`sidecar ${res.status}`)
+        throw new Error(`webhook ${res.status}`)
       }
     }
   },
 } satisfies ExportedHandler<Env>
 
-function parsePatterns(raw: string): Pattern[] {
-  let arr: unknown
-  try {
-    arr = JSON.parse(raw)
-  } catch {
-    return []
-  }
-  if (!Array.isArray(arr)) return []
+function compilePatterns(raw: readonly string[]): Pattern[] {
   const out: Pattern[] = []
-  for (const s of arr) {
-    if (typeof s !== "string" || s.length === 0) continue
+  for (const s of raw) {
+    if (s.length === 0) continue
     if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
-      try {
-        out.push({ kind: "regex", re: new RegExp(s.slice(1, -1), "i") })
-      } catch {
-        // bad regex — skip
-      }
+      out.push({ kind: "regex", re: new RegExp(s.slice(1, -1), "i") })
       continue
     }
     out.push({ kind: "exact", value: s.toLowerCase() })

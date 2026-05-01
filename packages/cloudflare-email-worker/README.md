@@ -31,9 +31,9 @@ GitHub  ──email──▶  gh@yourdomain.com
    - Cloudflare dashboard → your zone → **Email** → enable Email Routing.
    - Add a destination address (e.g. `gh@yourdomain.com`) and verify it via the email Cloudflare sends.
 
-2. **Edit `wrangler.toml`**.
-   - `ALLOWED_SENDERS` — JSON-encoded string array. Exact strings are case-insensitive matches; strings of the form `/regex/` are treated as case-insensitive regex. Default allows `notifications@github.com` and any `*@github.com`.
-   - `SIDECAR_URL` — public URL of your opencode-webhooks endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network.
+2. **Edit config**.
+   - `wrangler.json` → `vars.WEBHOOK_URL` — public URL of your opencode-webhooks endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network.
+   - `src/index.ts` → `ALLOWED_SENDERS` — TypeScript const at the top of the file. Exact strings are case-insensitive matches; strings of the form `/regex/` are treated as case-insensitive regex. Default allows `notifications@github.com` and any `*@github.com`. Compiles once at module load (zero per-request overhead).
 
 3. **Set the shared HMAC secret**:
    ```sh
