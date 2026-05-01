@@ -1,14 +1,15 @@
-// Build a GitHub-shaped payload from an email, by fetching canonical
-// state via the GitHub API. Existing agents/triggers see the same JSON
-// shape they'd get from a real webhook delivery, so they don't need
-// any email-specific handling.
+// Build a GitHub-shaped payload from an email event, by fetching
+// canonical state via the GitHub API. Existing agents/triggers see the
+// same JSON shape they'd get from a real webhook delivery, so they
+// don't need any email-specific handling.
 //
-// We never read the email body — only headers. The body of an issue or
-// PR comment comes from the API, which is the source of truth.
+// The email body never reaches us — the Cloudflare worker only POSTs
+// metadata (from/to/subject + the headers we use for routing). The
+// body of an issue or PR comment is fetched from the API, which is
+// the source of truth.
 
 import { ghApi } from "./github-api"
-import type { EmailIdentity } from "./identity"
-import type { EmailHeaders } from "./parse"
+import type { EmailEvent, EmailIdentity } from "./identity"
 
 export type SyntheticPayload = Record<string, unknown> & {
   repository: {
@@ -22,7 +23,7 @@ export type SyntheticPayload = Record<string, unknown> & {
     message_id: string
     from: string
     to: string
-    list_id: string
+    list_id: string | null
     kind: string
   }
 }
@@ -33,16 +34,12 @@ export type SynthesisResult =
 
 export async function synthesizePayload(
   identity: EmailIdentity,
-  headers: EmailHeaders,
-  envelope: { from: string; to: string; reason: string },
+  event: EmailEvent,
+  reason: string,
 ): Promise<SynthesisResult> {
   if (identity.kind === "unknown") {
     return { ok: false, error: "unknown-message-id" }
   }
-
-  const sender = headers.get("x-github-sender") ?? null
-  const messageId = headers.get("message-id") ?? ""
-  const listId = headers.get("list-id") ?? ""
 
   const repository = {
     full_name: `${identity.owner}/${identity.repo}`,
@@ -50,13 +47,14 @@ export async function synthesizePayload(
     name: identity.repo,
   }
   const emailMeta = {
-    reason: envelope.reason,
-    message_id: messageId,
-    from: envelope.from,
-    to: envelope.to,
-    list_id: listId,
+    reason,
+    message_id: event.message_id,
+    from: event.from,
+    to: event.to,
+    list_id: event.list_id,
     kind: identity.kind,
   }
+  const sender = { login: event.x_github_sender }
 
   if (identity.kind === "issue") {
     const issue = await ghApi<Record<string, unknown>>(
@@ -77,7 +75,7 @@ export async function synthesizePayload(
         repository,
         issue,
         ...(comment ? { comment } : {}),
-        sender: { login: sender },
+        sender,
         _email: emailMeta,
       },
     }
@@ -115,7 +113,7 @@ export async function synthesizePayload(
       pull_request: pull,
       ...(comment ? { comment } : {}),
       ...(review ? { review } : {}),
-      sender: { login: sender },
+      sender,
       _email: emailMeta,
     },
   }

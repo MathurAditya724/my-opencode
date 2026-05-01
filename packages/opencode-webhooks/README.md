@@ -7,7 +7,7 @@ When a configured webhook arrives, the plugin verifies the HMAC signature, dedup
 Two ingest sources are supported:
 
 - **`source: "github_webhook"`** (default) — classic GitHub webhook deliveries to `POST /webhooks/github`. Standard event/action matching against `X-GitHub-Event`.
-- **`source: "email"`** — GitHub notification emails forwarded by a Cloudflare Email Worker to `POST /webhooks/email`. The plugin parses RFC822 headers, identifies the referenced issue/PR via `Message-ID`, fetches canonical state from the GitHub API via `gh`, and dispatches the synthesized payload — same shape an actual webhook would produce, so existing agents work unchanged.
+- **`source: "email"`** — GitHub notification emails relayed by a Cloudflare Email Worker. The worker forwards a small JSON event (the headers we care about — `from`, `to`, `subject`, `message_id`, `in_reply_to`, `references`, `list_id`, `x_github_reason`, `x_github_sender`) to `POST /webhooks/email`. The plugin identifies the referenced issue/PR from `message_id`/`in_reply_to`/`references`, fetches canonical state from the GitHub API via `gh`, and dispatches the synthesized payload — same shape an actual webhook would produce, so existing agents work unchanged.
 
 > **Runtime: Bun ≥ 1.2.** Uses `Bun.serve`, `Bun.spawn`, and `bun:sqlite`.
 
@@ -131,16 +131,30 @@ Body: GitHub event JSON.
 
 ### `POST /webhooks/email`
 
-Forwarded by the Cloudflare email worker. Required headers:
+Posted by the Cloudflare email worker.
 
-- `X-Email-Signature-256` — `sha256=<hex>` HMAC of the raw body using `EMAIL_WEBHOOK_SECRET`.
-- `X-Email-From` — RFC5322 `From` value of the email.
-- `X-Email-To` — RFC5322 `To` value.
-- `X-Email-Message-ID` — Message-ID (also re-parsed from the body).
+- Header `X-Email-Signature-256` — `sha256=<hex>` HMAC of the raw body using `EMAIL_WEBHOOK_SECRET`.
+- `Content-Type: application/json`.
 
-Body: raw RFC822 message (`Content-Type: message/rfc822`). Only headers are read; the body is never passed to the LLM. Canonical state for the referenced issue/PR/comment is fetched from the GitHub API via `gh`.
+Body: a small JSON event with the headers the plugin actually uses:
 
-Both endpoints return 200 on accept (including drops/duplicates with a `dropped` or `duplicate` field), 401 on bad signature, 403 on email allowlist mismatch, 404 on path mismatch, 413 on oversized body, 503 if the corresponding secret is unconfigured.
+```json
+{
+  "from": "notifications@github.com",
+  "to": "gh@yourdomain.com",
+  "subject": "Re: [owner/repo] feat: ...",
+  "message_id": "<owner/repo/pull/12@github.com>",
+  "in_reply_to": "<owner/repo/pull/12@github.com>",
+  "references": ["<...>", "<...>"],
+  "list_id": "<repo.owner.github.com>",
+  "x_github_reason": "mention",
+  "x_github_sender": "octocat"
+}
+```
+
+The body of the email itself is never sent — canonical state for the referenced issue/PR/comment is fetched from the GitHub API via `gh`. Eliminates prompt-injection from email content.
+
+Both endpoints return 200 on accept (including drops/duplicates with a `dropped` or `duplicate` field), 400 on a malformed event body, 401 on bad signature, 403 on email allowlist mismatch, 404 on path mismatch, 413 on oversized body, 503 if the corresponding secret is unconfigured.
 
 ## Limitations
 

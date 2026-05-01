@@ -1,12 +1,15 @@
 # opencode-cloudflare-email-worker
 
-Cloudflare Email Worker that forwards GitHub notification emails to the [`opencode-webhooks`](../opencode-webhooks/) plugin's `POST /webhooks/email` endpoint.
+Cloudflare Email Worker that sits in front of the [`opencode-webhooks`](../opencode-webhooks/) plugin. It does two things per inbound email:
 
-This is the **email ingest path**. The plugin parses RFC822 headers, identifies the referenced GitHub issue/PR via `Message-ID`, fetches canonical state via `gh`, and dispatches to OpenCode agents — same shape as a real GitHub webhook.
+1. **Always forwards** the email verbatim to `FORWARD_TO` (your real inbox), if the env var is set. DKIM is preserved via Cloudflare's `message.forward()`.
+2. **If the sender is in `ALLOWED_SENDERS`**, it builds a small JSON event from the headers (`from`, `to`, `subject`, `message_id`, `in_reply_to`, `references`, `list_id`, `x_github_reason`, `x_github_sender`), HMAC-signs it, and POSTs it to `WEBHOOK_URL` (the plugin's `/webhooks/email` endpoint).
+
+The worker is a **dumb pipe** — no header parsing, no body inspection, no allowlist beyond the simple From-address gate. The plugin owns identity resolution (Message-ID → owner/repo/issue#), GitHub API fetches, dedup, and dispatch.
 
 ## Why
 
-GitHub doesn't expose a "send me everything that involves my user" webhook. But it already filters down to "stuff I care about" before sending notification emails — mentions, review requests, assignments, comments on PRs/issues you're involved in, across every repo your account touches. This worker lets you turn that mailbox into an event stream.
+GitHub doesn't expose a "send me everything that involves my user" webhook. But it already filters down to "stuff I care about" before sending notification emails — mentions, review requests, assignments, comments on PRs/issues you're involved in, across every repo your account touches. This worker lets you turn that mailbox into an event stream **without** giving up the ability to read the same emails as a human.
 
 ## Architecture
 
@@ -15,14 +18,20 @@ GitHub  ──email──▶  gh@yourdomain.com
                          │
                          │ Cloudflare Email Routing
                          ▼
-                    Email Worker
-                       ├─ allowlist (static + /regex/)
-                       └─ HMAC-sign + POST
+                    Email Worker (dumb pipe)
+                       ├─ message.forward(FORWARD_TO)        ──▶ your real inbox (always)
+                       └─ if From ∈ ALLOWED_SENDERS:
+                              POST {from, to, subject,
+                                    message_id, in_reply_to,
+                                    references, list_id,
+                                    x_github_reason,
+                                    x_github_sender}
+                              HMAC-signed application/json
                             │
                             ▼
                   https://your-host/webhooks/email
                        opencode-webhooks plugin
-                       (parse → synthesize → dispatch)
+                       (verify → identify → gh fetch → dispatch)
 ```
 
 ## Setup
@@ -33,7 +42,9 @@ GitHub  ──email──▶  gh@yourdomain.com
 
 2. **Edit config**.
    - `wrangler.json` → `vars.WEBHOOK_URL` — public URL of your opencode-webhooks endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network.
+   - `wrangler.json` → `vars.FORWARD_TO` — destination address for the verbatim forward (e.g. `you@yourdomain.com`). **Must be verified in Cloudflare Email Routing first** (Email Routing → Destination addresses → Add). Leave unset (or remove the key) to skip forwarding entirely.
    - `src/index.ts` → `ALLOWED_SENDERS` — TypeScript const at the top of the file. Exact strings are case-insensitive matches; strings of the form `/regex/` are treated as case-insensitive regex. Default allows `notifications@github.com` and any `*@github.com`. Compiles once at module load (zero per-request overhead).
+   - `wrangler.json` → `observability.logs.enabled` — set to `true` (default in this repo) so you can `wrangler tail` and see structured logs in the Cloudflare dashboard.
 
 3. **Set the shared HMAC secret**:
    ```sh
@@ -69,8 +80,19 @@ GitHub  ──email──▶  gh@yourdomain.com
 ## Test
 
 - Send yourself a mention/review request from another GitHub account.
-- Watch the worker: `bun run tail`. Should log a successful POST.
+- Watch the worker: `bun run tail`. Should log a successful webhook POST and (if `FORWARD_TO` is set) a successful forward.
 - Watch the container's stdout. Should log `[opencode-webhooks] trigger 'email-mention' → session ...`.
+- Check your `FORWARD_TO` inbox — the original email should have arrived with DKIM intact.
+
+## Failure modes
+
+| Scenario | Behavior |
+|---|---|
+| `FORWARD_TO` unset | Skipped, no error. Webhook still fires for allowlisted senders. |
+| `FORWARD_TO` set but unverified | `message.forward()` throws — caught and logged; webhook still fires. Verify the address in Cloudflare Email Routing → Destination addresses. |
+| Sender not in `ALLOWED_SENDERS` | Forward still happens. Webhook is skipped (logged at info). |
+| Plugin returns 5xx | Cloudflare retries the email later. Forward already happened, so retries don't double-forward. |
+| Plugin returns 4xx (bad signature, dedup, etc.) | Logged, accepted (no retry). Forward already happened. |
 
 ## Security model
 
@@ -80,8 +102,8 @@ GitHub  ──email──▶  gh@yourdomain.com
 | Worker `ALLOWED_SENDERS` | Drops any From not in the allowlist (defense vs. spoofs that pass DMARC because the attacker controls `*.github.com`-adjacent domains). |
 | `EMAIL_WEBHOOK_SECRET` HMAC | Authenticates the worker → plugin link. Without it, the plugin returns 503. |
 | Plugin re-checks `email_allowed_senders` | Same allowlist applied server-side as defense in depth (and lets you tighten without redeploying the worker). |
-| Plugin never reads body | The email body never reaches the LLM. Only RFC822 headers (Message-ID, X-GitHub-*) drive routing; the canonical issue/PR/comment is fetched from the GitHub API. Eliminates prompt-injection from email content. |
-| Self-loop guard | The plugin drops emails whose `X-GitHub-Sender` matches the bot's own login. |
+| Plugin never sees the body | The worker only sends the headers it cares about — never the body. The canonical issue/PR/comment is fetched from the GitHub API instead. Eliminates prompt-injection from email content. |
+| Self-loop guard | The plugin drops emails whose `x_github_sender` matches the bot's own login. |
 
 ## Cost
 
