@@ -9,15 +9,16 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (7 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
-- **Bundled agents** (all `mode: primary`, permissions pre-broadened so they don't stall on approval prompts):
+- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (8 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
+- **Bundled agents** (permissions pre-broadened so they don't stall on approval prompts):
   - [`github-issue-resolver`](./agents/github-issue-resolver.md) — issue assigned → branch → plan → implement → draft PR.
-  - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review → reads diff + linked issue → posts an honest review (APPROVE / REQUEST_CHANGES / COMMENT) via `gh pr review`.
+  - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review / review-requested → runs the `review` skill to find issues. On the bot's own PRs it spawns the `pr-fix-applier` subagent to push fixes directly. On others' PRs it posts a structured GitHub review.
+  - [`pr-fix-applier`](./agents/pr-fix-applier.md) — subagent invoked by `pr-reviewer`. Takes a list of findings, implements each, runs deslop + tests, pushes a single commit. Doesn't touch GitHub UI.
   - [`ci-fixer`](./agents/ci-fixer.md) — `check_suite.completed` with `conclusion: failure` → diagnoses the failure → pushes the smallest fix → comments on the PR. Capped at 3 attempts per PR.
   - [`pr-comment-responder`](./agents/pr-comment-responder.md) — review comment / PR comment / review submitted → triages → fixes if actionable, replies in either case.
 - **Bundled skills** (loadable on demand by any agent via the `skill` tool):
   - [`pr`](./skills/pr/SKILL.md) — open a draft PR with the implementation plan attached as a git note.
-  - [`review`](./skills/review/SKILL.md) — self-review the diff (and PR description) before merge.
+  - [`review`](./skills/review/SKILL.md) — diff against default branch and emit a structured `findings` list (kind / file / line / summary / suggested_fix).
   - [`deslop`](./skills/deslop/SKILL.md) — strip AI-generated noise from the diff before commit.
   - All three are adapted from [BYK/dotskills](https://github.com/BYK/dotskills) (Apache-2.0).
 - Non-root `developer` user. OpenCode starts in `~/dev`. Mount a single persistent volume at `~/dev` (= `/home/developer/dev`) to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `~/dev/.opencode`.
