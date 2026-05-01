@@ -1,15 +1,17 @@
 // opencode-webhooks: receives GitHub webhooks (and optional Cloudflare
 // email worker forwards) and dispatches to OpenCode agents via the
-// in-process SDK client. Listener on WEBHOOK_PORT (default 5050).
+// in-process SDK client. Uses Hono for routing and Sentry for error
+// tracking. Listener on WEBHOOK_PORT (default 5050).
 // Trigger config in webhooks.json.
 
 import type { Plugin } from "@opencode-ai/plugin"
+import * as Sentry from "@sentry/bun"
 import { homedir } from "node:os"
 import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
 import { parseAllowlist } from "./email/allowlist"
 import { makeDispatcher } from "./dispatch"
-import { makeFetchHandler } from "./handler"
+import { createApp } from "./handler"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
 import { openDeliveryStore } from "./storage"
 export type {
@@ -21,15 +23,20 @@ export type {
 } from "./types"
 
 export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
-  // Bun-only: we use Bun.serve, Bun.spawn, Bun.file, and bun:sqlite.
-  // OpenCode runs on Bun by default so this is normally a no-op; the
-  // check exists so consumers running an unofficial Node-based fork
-  // get a useful error instead of a cryptic ReferenceError on first
-  // dispatch.
   if (typeof Bun === "undefined") {
     throw new Error(
       "opencode-webhooks requires Bun (uses Bun.serve, Bun.spawn, Bun.file, bun:sqlite). Install Bun >=1.2.0: https://bun.sh",
     )
+  }
+
+  // Initialize Sentry if a DSN is configured.
+  const sentryDsn = process.env.SENTRY_DSN ?? ""
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      tracesSampleRate: 1.0,
+    })
+    console.log("[opencode-webhooks] Sentry initialized")
   }
 
   // Don't let a dispatch bug take down the host opencode server.
@@ -37,6 +44,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   if (!guard.__ghWebhookGuard) {
     process.on("unhandledRejection", (err) => {
       console.error("[opencode-webhooks] unhandledRejection:", err)
+      Sentry.captureException(err)
     })
     guard.__ghWebhookGuard = true
   }
@@ -52,9 +60,6 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
   const defaultCwd = cfg.default_cwd ?? ctx.directory
   const retention = cfg.retention ?? 1000
-  // Default DB path follows the XDG data spec; consumers running in
-  // sandboxed/persistent-volume environments should override `db_path`
-  // in webhooks.json to point at their persistent location.
   const xdgDataHome = process.env.XDG_DATA_HOME || `${homedir()}/.local/share`
   const dbPath = cfg.db_path ?? `${xdgDataHome}/opencode-webhooks/deliveries.sqlite`
 
@@ -98,7 +103,8 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     semaphore,
     drainCounter,
   })
-  const fetch = makeFetchHandler({
+
+  const app = createApp({
     secret,
     emailSecret,
     emailAllowlist,
@@ -109,14 +115,18 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     botLogin,
   })
 
-  const server = Bun.serve({ port, hostname: "0.0.0.0", fetch })
+  const server = Bun.serve({
+    port,
+    hostname: "0.0.0.0",
+    fetch: app.fetch,
+  })
 
   console.log(
     `[opencode-webhooks] listening on http://0.0.0.0:${port} (db: ${dbPath}, triggers: github=${githubTriggerCount}, email=${emailTriggerCount})`,
   )
 
-  // Graceful shutdown: stop accepting new connections, drain in-flight
-  // dispatches with a 25s ceiling.
+  // Graceful shutdown: stop accepting new connections, flush Sentry,
+  // drain in-flight dispatches with a 25s ceiling.
   let stopping = false
   const onShutdown = async (sig: NodeJS.Signals) => {
     if (stopping) return
@@ -139,6 +149,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
         `[opencode-webhooks] drain timeout after ${drainTimeoutMs}ms — ${drainCounter.inFlight()} dispatch(es) still in flight`,
       )
     }
+    await Sentry.close(2000)
   }
   process.once("SIGTERM", () => void onShutdown("SIGTERM"))
   process.once("SIGINT", () => void onShutdown("SIGINT"))
