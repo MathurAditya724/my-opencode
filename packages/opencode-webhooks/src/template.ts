@@ -1,5 +1,12 @@
 // Path lookup + mustache-ish template rendering.
 
+// Walk a dotted path and return the value only if it's a string.
+// Saves the (lookup → typeof === "string" ? v : null) dance at call sites.
+export function lookupString(ctx: unknown, path: string): string | null {
+  const v = lookup(ctx, path)
+  return typeof v === "string" ? v : null
+}
+
 // Walk a dotted path through a payload. Numeric `[N]` works; missing
 // segment yields undefined.
 export function lookup(ctx: unknown, path: string): unknown {

@@ -1,23 +1,14 @@
 // Fetch handler for POST /webhooks/github. Verifies HMAC, dedupes by
 // X-GitHub-Delivery, runs the standard ignore_authors / require_bot_match
 // / payload_filter pipeline, renders the prompt, and dispatches.
-//
-// Only triggers with source === "github_webhook" (the default) are
-// considered here.
 
 import type { Dispatcher } from "../dispatch"
-import {
-  evaluateBotMatch,
-  evaluateIgnoreAuthors,
-  evaluatePayloadFilter,
-  findMatching,
-} from "../matchers"
-import type { DeliveryStore } from "../storage"
-import { lookup, renderTemplate } from "../template"
-import type { NormalizedTrigger, SkippedDispatch } from "../types"
 import { verifyGithubSignature } from "../hmac"
-
-const MAX_BODY_BYTES = 25 * 1024 * 1024 // GitHub's webhook payload cap
+import { readBodyBytes, computeSynthetics } from "../http"
+import { evaluateAndDispatch } from "../matchers"
+import type { DeliveryStore } from "../storage"
+import { lookupString } from "../template"
+import type { NormalizedTrigger } from "../types"
 
 export function makeGithubFetchHandler(opts: {
   secret: string
@@ -28,8 +19,6 @@ export function makeGithubFetchHandler(opts: {
   botLogin: string | null
 }): (req: Request) => Promise<Response> {
   const { secret, triggers, store, retention, dispatch, botLogin } = opts
-  // Pre-filter so other source types can't accidentally fire here.
-  const githubTriggers = triggers.filter((t) => t.source === "github_webhook")
 
   return async function fetch(req) {
     if (!secret) {
@@ -52,16 +41,10 @@ export function makeGithubFetchHandler(opts: {
       )
     }
 
-    // Body size cap (matches GitHub's 25 MB limit). Check both
-    // declared and actual length to defend against lying clients.
-    const declaredLength = Number(req.headers.get("content-length") ?? "0")
-    if (declaredLength > MAX_BODY_BYTES) {
-      return Response.json({ error: "payload too large" }, { status: 413 })
-    }
-    const rawBody = await req.text()
-    if (rawBody.length > MAX_BODY_BYTES) {
-      return Response.json({ error: "payload too large" }, { status: 413 })
-    }
+    const body = await readBodyBytes(req)
+    if (!body.ok) return body.response
+    const rawBody = new TextDecoder("utf-8").decode(body.bytes)
+
     const signature = req.headers.get("x-hub-signature-256")
     if (!verifyGithubSignature(rawBody, signature, secret)) {
       return Response.json({ error: "invalid signature" }, { status: 401 })
@@ -89,52 +72,24 @@ export function makeGithubFetchHandler(opts: {
       })
     }
 
-    const senderLogin =
-      typeof payload === "object" && payload !== null
-        ? (payload as { sender?: { login?: unknown } }).sender?.login
-        : undefined
-    const sender = typeof senderLogin === "string" ? senderLogin : null
-
     const synthetics = computeSynthetics(payload)
-
-    const matches = findMatching(githubTriggers, event, action)
-    const dispatched: string[] = []
-    const skipped: SkippedDispatch[] = []
-    for (const t of matches) {
-      // 1. Sender filter (self-loop guard).
-      const senderReason = evaluateIgnoreAuthors(t.ignore_authors, sender)
-      if (senderReason) {
-        skipped.push({ name: t.name, reason: senderReason })
-        continue
-      }
-      // 2. Identity gate (is this work for the bot?).
-      const botMatchReason = evaluateBotMatch(
-        t.require_bot_match,
-        payload,
-        botLogin,
-      )
-      if (botMatchReason) {
-        skipped.push({ name: t.name, reason: botMatchReason })
-        continue
-      }
-      // 3. Payload-shape filter.
-      const filterReason = evaluatePayloadFilter(t.payload_filter, payload)
-      if (filterReason) {
-        skipped.push({ name: t.name, reason: filterReason })
-        continue
-      }
-
-      const prompt = renderTemplate(t.prompt_template, {
+    const { dispatched, skipped } = evaluateAndDispatch({
+      triggers,
+      event,
+      action,
+      payload,
+      sender: lookupString(payload, "sender.login"),
+      botLogin,
+      deliveryId,
+      templateContext: {
         event,
         action,
         delivery_id: deliveryId,
         payload,
         ...synthetics,
-      })
-      // Fire-and-forget; dispatch owns its errors.
-      void dispatch(t, prompt, deliveryId)
-      dispatched.push(t.name)
-    }
+      },
+      dispatch,
+    })
 
     return Response.json({
       ok: true,
@@ -145,18 +100,5 @@ export function makeGithubFetchHandler(opts: {
       dispatched,
       ...(skipped.length > 0 ? { skipped } : {}),
     })
-  }
-}
-
-// Values surfaced into prompt templates that the path-only renderer
-// can't compute (lowercased values, etc.). Presence/non-empty checks
-// are handled by `payload_filter: { path: "*" }` on the trigger
-// instead.
-function computeSynthetics(payload: unknown): Record<string, unknown> {
-  const ev = (payload as Record<string, unknown> | null) ?? {}
-  const reviewState = lookup(ev, "review.state")
-  return {
-    review_state:
-      typeof reviewState === "string" ? reviewState.toLowerCase() : null,
   }
 }

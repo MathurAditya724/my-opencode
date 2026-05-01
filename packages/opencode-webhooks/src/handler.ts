@@ -1,6 +1,9 @@
 // URL router for the plugin's Bun.serve listener. Two POST routes
 // (one per ingest source) and a GET healthz, all sharing the same
 // dispatcher + store. Per-route logic lives under ./handlers/.
+//
+// Triggers are split by `source` here once so the handlers don't need
+// to know about other ingest paths.
 
 import type { Dispatcher } from "./dispatch"
 import type { AllowlistPattern } from "./email/allowlist"
@@ -19,9 +22,14 @@ export function makeFetchHandler(opts: {
   dispatch: Dispatcher
   botLogin: string | null
 }): (req: Request) => Promise<Response> {
+  const githubTriggers = opts.triggers.filter(
+    (t) => t.source === "github_webhook",
+  )
+  const emailTriggers = opts.triggers.filter((t) => t.source === "email")
+
   const githubHandler = makeGithubFetchHandler({
     secret: opts.secret,
-    triggers: opts.triggers,
+    triggers: githubTriggers,
     store: opts.store,
     retention: opts.retention,
     dispatch: opts.dispatch,
@@ -30,7 +38,7 @@ export function makeFetchHandler(opts: {
   const emailHandler = makeEmailFetchHandler({
     emailSecret: opts.emailSecret,
     allowlist: opts.emailAllowlist,
-    triggers: opts.triggers,
+    triggers: emailTriggers,
     store: opts.store,
     retention: opts.retention,
     dispatch: opts.dispatch,

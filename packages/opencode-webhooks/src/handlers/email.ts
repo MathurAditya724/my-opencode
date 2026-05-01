@@ -4,21 +4,11 @@
 // referenced GitHub entity, fetch canonical state via `gh`, and drive
 // the same dispatcher the github handler uses.
 //
-// Only triggers with source === "email" are considered here. Their
-// `event` is "email.<reason>" where <reason> is the X-GitHub-Reason
-// header (lowercased): mention, review_requested, assign, comment, ...
+// Synthesized event is "email.<reason>" where <reason> is the
+// X-GitHub-Reason header (lowercased): mention, review_requested,
+// assign, comment, …
 
 import type { Dispatcher } from "../dispatch"
-import { verifySha256Signature } from "../hmac"
-import {
-  evaluateBotMatch,
-  evaluateIgnoreAuthors,
-  evaluatePayloadFilter,
-  findMatching,
-} from "../matchers"
-import type { DeliveryStore } from "../storage"
-import { lookup, renderTemplate } from "../template"
-import type { NormalizedTrigger, SkippedDispatch } from "../types"
 import {
   type AllowlistPattern,
   extractAddress,
@@ -27,8 +17,12 @@ import {
 import { identifyEmail } from "../email/identity"
 import { parseHeaders } from "../email/parse"
 import { synthesizePayload } from "../email/synthesize"
-
-const MAX_BODY_BYTES = 25 * 1024 * 1024
+import { verifySha256Signature } from "../hmac"
+import { computeSynthetics, readBodyBytes } from "../http"
+import { evaluateAndDispatch } from "../matchers"
+import type { DeliveryStore } from "../storage"
+import { lookupString } from "../template"
+import type { NormalizedTrigger } from "../types"
 
 export function makeEmailFetchHandler(opts: {
   emailSecret: string
@@ -48,7 +42,6 @@ export function makeEmailFetchHandler(opts: {
     dispatch,
     botLogin,
   } = opts
-  const emailTriggers = triggers.filter((t) => t.source === "email")
 
   return async function fetch(req) {
     if (!emailSecret) {
@@ -58,18 +51,13 @@ export function makeEmailFetchHandler(opts: {
       )
     }
 
-    const declaredLength = Number(req.headers.get("content-length") ?? "0")
-    if (declaredLength > MAX_BODY_BYTES) {
-      return Response.json({ error: "payload too large" }, { status: 413 })
-    }
     // Read body as raw bytes so HMAC matches what the worker signed.
     // UTF-8-decoding via req.text() would replace 8-bit sequences and
     // break signature verification on RFC822 messages with non-UTF-8
     // content (rare for GitHub notifications but possible).
-    const rawBytes = new Uint8Array(await req.arrayBuffer())
-    if (rawBytes.byteLength > MAX_BODY_BYTES) {
-      return Response.json({ error: "payload too large" }, { status: 413 })
-    }
+    const body = await readBodyBytes(req)
+    if (!body.ok) return body.response
+    const rawBytes = body.bytes
 
     const signature = req.headers.get("x-email-signature-256")
     if (!verifySha256Signature(rawBytes, signature, emailSecret)) {
@@ -170,51 +158,29 @@ export function makeEmailFetchHandler(opts: {
 
     // API-fetched login is the trustworthy source for self-loop
     // suppression; X-GitHub-Sender header is only the fallback.
-    const apiSender = lookup(synth.payload, "comment.user.login")
-    const apiReviewSender = lookup(synth.payload, "review.user.login")
     const senderForIgnore =
-      (typeof apiSender === "string" ? apiSender : null) ??
-      (typeof apiReviewSender === "string" ? apiReviewSender : null) ??
+      lookupString(synth.payload, "comment.user.login") ??
+      lookupString(synth.payload, "review.user.login") ??
       ghSender
 
-    const reviewState = lookup(synth.payload, "review.state")
-    const review_state =
-      typeof reviewState === "string" ? reviewState.toLowerCase() : null
-
-    const matches = findMatching(emailTriggers, event, null)
-    const dispatched: string[] = []
-    const skipped: SkippedDispatch[] = []
-    for (const t of matches) {
-      const senderReason = evaluateIgnoreAuthors(t.ignore_authors, senderForIgnore)
-      if (senderReason) {
-        skipped.push({ name: t.name, reason: senderReason })
-        continue
-      }
-      const botMatchReason = evaluateBotMatch(
-        t.require_bot_match,
-        synth.payload,
-        botLogin,
-      )
-      if (botMatchReason) {
-        skipped.push({ name: t.name, reason: botMatchReason })
-        continue
-      }
-      const filterReason = evaluatePayloadFilter(t.payload_filter, synth.payload)
-      if (filterReason) {
-        skipped.push({ name: t.name, reason: filterReason })
-        continue
-      }
-
-      const prompt = renderTemplate(t.prompt_template, {
+    const synthetics = computeSynthetics(synth.payload)
+    const { dispatched, skipped } = evaluateAndDispatch({
+      triggers,
+      event,
+      action: null,
+      payload: synth.payload,
+      sender: senderForIgnore,
+      botLogin,
+      deliveryId: dedupKey,
+      templateContext: {
         event,
         action: null,
         delivery_id: dedupKey,
         payload: synth.payload,
-        review_state,
-      })
-      void dispatch(t, prompt, dedupKey)
-      dispatched.push(t.name)
-    }
+        ...synthetics,
+      },
+      dispatch,
+    })
 
     return Response.json({
       ok: true,

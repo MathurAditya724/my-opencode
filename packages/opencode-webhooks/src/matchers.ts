@@ -1,8 +1,10 @@
-// Per-trigger filters. Each returns null on match (= proceed) or a
-// string reason on miss (= skip with that reason).
+// Per-trigger filters + the shared evaluate-and-dispatch loop used by
+// both the GitHub and email fetch handlers. Filter helpers each return
+// null on match (= proceed) or a string reason on miss (= skip).
 
-import type { NormalizedTrigger } from "./types"
-import { lookup, lookupAll } from "./template"
+import type { Dispatcher } from "./dispatch"
+import { lookup, lookupAll, renderTemplate } from "./template"
+import type { NormalizedTrigger, SkippedDispatch } from "./types"
 
 // Every enabled trigger matching (event, action) fires. `*` matches
 // any event; null/missing action matches any action.
@@ -79,4 +81,36 @@ export function evaluateIgnoreAuthors(
     return `ignored sender '${sender}'`
   }
   return null
+}
+
+// Run the full per-trigger pipeline (sender → bot-match → payload-shape
+// → template → dispatch) shared by both the GitHub and email handlers.
+// Order is preserved so skip reasons logged downstream stay grep-able.
+export function evaluateAndDispatch(opts: {
+  triggers: NormalizedTrigger[]
+  event: string
+  action: string | null
+  payload: unknown
+  sender: string | null
+  botLogin: string | null
+  deliveryId: string
+  templateContext: Record<string, unknown>
+  dispatch: Dispatcher
+}): { dispatched: string[]; skipped: SkippedDispatch[] } {
+  const dispatched: string[] = []
+  const skipped: SkippedDispatch[] = []
+  for (const t of findMatching(opts.triggers, opts.event, opts.action)) {
+    const reason =
+      evaluateIgnoreAuthors(t.ignore_authors, opts.sender) ??
+      evaluateBotMatch(t.require_bot_match, opts.payload, opts.botLogin) ??
+      evaluatePayloadFilter(t.payload_filter, opts.payload)
+    if (reason) {
+      skipped.push({ name: t.name, reason })
+      continue
+    }
+    const prompt = renderTemplate(t.prompt_template, opts.templateContext)
+    void opts.dispatch(t, prompt, opts.deliveryId)
+    dispatched.push(t.name)
+  }
+  return { dispatched, skipped }
 }

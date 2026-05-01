@@ -40,19 +40,17 @@ export async function synthesizePayload(
     return { ok: false, error: "unknown-message-id" }
   }
 
-  const reason = envelope.reason
   const sender = headers.get("x-github-sender") ?? null
   const messageId = headers.get("message-id") ?? ""
   const listId = headers.get("list-id") ?? ""
 
-  const fullName = `${identity.owner}/${identity.repo}`
   const repository = {
-    full_name: fullName,
+    full_name: `${identity.owner}/${identity.repo}`,
     owner: { login: identity.owner },
     name: identity.repo,
   }
   const emailMeta = {
-    reason,
+    reason: envelope.reason,
     message_id: messageId,
     from: envelope.from,
     to: envelope.to,
