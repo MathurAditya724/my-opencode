@@ -1,3 +1,8 @@
 .env
 .env.*
 !.env.example
+
+# Local-only OpenCode workspace state (plans, scratch notes, session
+# data). Anything we want to share publicly belongs in repo-root files
+# (README, AGENTS.md, etc.), not here.
+.opencode/
