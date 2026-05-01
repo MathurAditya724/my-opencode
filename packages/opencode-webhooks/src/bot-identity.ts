@@ -18,14 +18,14 @@ export async function resolveBotLogin(): Promise<string | null> {
     clearTimeout(timer)
     if (exitCode !== 0) {
       console.warn(
-        `[github-webhooks] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`,
+        `[opencode-webhooks] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`,
       )
       return null
     }
     const login = stdout.trim()
     return login.length > 0 ? login : null
   } catch (err) {
-    console.warn("[github-webhooks] resolveBotLogin failed:", err)
+    console.warn("[opencode-webhooks] resolveBotLogin failed:", err)
     return null
   }
 }

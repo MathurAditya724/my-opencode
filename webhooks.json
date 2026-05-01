@@ -2,6 +2,7 @@
   "max_concurrent": 2,
   "timeout_ms": 1800000,
   "retention": 1000,
+  "db_path": "/home/developer/dev/.opencode/github-webhooks.sqlite",
   "triggers": [
     {
       "name": "issue-assigned",

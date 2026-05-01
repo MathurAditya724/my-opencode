@@ -190,11 +190,11 @@ COPY --chown=developer:developer agents \
 COPY --chown=developer:developer skills \
      /home/developer/.config/opencode/skills
 
-# Bundled plugins (e.g. github-webhooks). OpenCode auto-loads any
-# .ts/.js file in this directory at startup. The sibling package.json
-# declares the npm deps the plugins import (@opencode-ai/plugin); we
-# `bun install` them once at build time so OpenCode doesn't have to do
-# it on every container start.
+# Bundled plugin packages. The `opencode-webhooks` plugin lives under
+# packages/ as a workspace-style file: dep referenced from
+# opencode-config-package.json. `bun install` resolves it into
+# node_modules/ alongside the npm-published @loreai/opencode plugin;
+# both are referenced by absolute file:// URL from opencode.json.
 #
 # IMPORTANT: do NOT mount a runtime volume over /home/developer/.config/
 # opencode — it would mask the baked-in node_modules and the plugin
@@ -202,8 +202,8 @@ COPY --chown=developer:developer skills \
 # plugin'`. Persistent state (sessions, auth) lives at ~/dev/.opencode
 # already via the symlink set up below; that's the only directory you
 # should attach a volume to.
-COPY --chown=developer:developer plugins \
-     /home/developer/.config/opencode/plugins
+COPY --chown=developer:developer packages \
+     /home/developer/.config/opencode/packages
 COPY --chown=developer:developer opencode-config-package.json \
      /home/developer/.config/opencode/package.json
 COPY --chown=developer:developer opencode-config-bun.lock \
@@ -212,7 +212,7 @@ RUN cd /home/developer/.config/opencode \
  && bun install --frozen-lockfile --production \
  && rm -rf ~/.bun/install/cache
 
-# Default config for the github-webhooks plugin: one trigger that wires
+# Default config for the opencode-webhooks plugin: one trigger that wires
 # the `issues.assigned` event to the bundled `github-issue-resolver`
 # agent. The plugin reads this on startup; without it, the listener
 # stays off (no surprise port). Override per-deploy by setting
@@ -237,7 +237,7 @@ EXPOSE 4096 5050
 WORKDIR /home/developer/dev
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
-# to 4096 locally. WEBHOOK_PORT (default 5050) is what the github-webhooks
+# to 4096 locally. WEBHOOK_PORT (default 5050) is what the opencode-webhooks
 # plugin binds its listener to.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec opencode web --hostname 0.0.0.0 --port ${PORT:-4096}"]

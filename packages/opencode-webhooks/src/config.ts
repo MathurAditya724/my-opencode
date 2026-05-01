@@ -15,7 +15,7 @@ export async function readWebhookConfig(): Promise<WebhookConfig> {
     if (!parsed || typeof parsed !== "object") return {}
     return parsed as WebhookConfig
   } catch (err) {
-    console.error(`[github-webhooks] failed to parse config at ${path}:`, err)
+    console.error(`[opencode-webhooks] failed to parse config at ${path}:`, err)
     return {}
   }
 }

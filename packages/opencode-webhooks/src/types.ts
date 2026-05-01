@@ -1,4 +1,4 @@
-// Shared types for the github-webhooks plugin.
+// Shared types for the opencode-webhooks plugin.
 
 export type Trigger = {
   name: string
