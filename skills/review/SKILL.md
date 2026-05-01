@@ -1,43 +1,82 @@
 ---
 name: review
-description: Self-review the current branch's changes (and the PR description, if a PR exists) with a critical eye before merge. Use this after implementation but before pushing or marking a draft PR ready, to catch obvious gaps. Spawning a sub-agent for the review tends to produce more objective results than reviewing your own output directly.
+description: Review the current branch's changes against intent. Returns a structured list of findings the caller can hand to a fix-applier, or an empty list when there's nothing to address. Use this for both self-review of your own work and reviewing someone else's PR.
 license: Apache-2.0
 metadata:
   source: https://github.com/BYK/dotskills
   audience: autonomous-agents
 ---
 
-# Self-review changes
+# Review changes
 
-Now review your own code (including the PR description, if a PR exists)
-thoroughly and with a critical eye one last time.
+Read the diff against the default branch and produce a structured list
+of findings. The caller decides what to do with them — push fixes via
+a subagent, post a review on GitHub, or both.
 
 ## Process
 
-- Inspect `git diff <default-branch>...HEAD` and read every change as if
-  you were a reviewer encountering it for the first time.
-- Watch for:
-  - Logic that doesn't match what the issue asked for
-  - Missing test coverage on the new behavior
-  - Edge cases (null, empty, large input, concurrency)
-  - Inconsistent style with neighboring code
-  - Stale comments, dead branches, or scope creep
-- Read the PR description (if there is one) and confirm it matches the
-  actual diff.
+1. Resolve the default branch and diff:
+   ```sh
+   DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+   git diff "$DEFAULT_BRANCH"...HEAD
+   ```
+   Three-dot syntax shows just what this branch added, not unrelated
+   changes that landed on the default branch since branching.
 
-## Outcome
+2. For larger diffs, prefer spawning the `explore` sub-agent (via the
+   `task` tool) to do the read pass. The explore agent is read-only and
+   doesn't carry the implementation's "obvious in context" bias.
 
-- **Looks good** → proceed to merge / mark ready-for-review.
-- **Gaps found** → fix them in the same branch, then run this skill
-  again before proceeding.
+3. Read every change against the PR's stated intent (PR body + linked
+   issues via `gh issue view`). For each concern, classify it:
 
-## Tip
+   - **bug** — logic doesn't match intent, broken edge case (null,
+     empty, concurrency), incorrect assumption, factual error.
+   - **test-gap** — new behavior added without test coverage on a
+     critical path.
+   - **style** — inconsistent with surrounding code (string quotes,
+     brace style, naming).
+   - **scope** — diff includes changes unrelated to the stated intent.
+   - **docs** — stale comments or PR description doesn't match diff.
 
-Using a sub-agent (via the `task` tool) for the review often yields
-more objective results than reviewing your own output directly. The
-sub-agent doesn't have the implementation's "obvious in context" bias.
+## Output format
+
+Emit a JSON block as the FINAL part of your reply, exactly:
+
+```json
+{
+  "findings": [
+    {
+      "kind": "bug" | "test-gap" | "style" | "scope" | "docs",
+      "file": "<path/to/file>",
+      "line": <number or null>,
+      "summary": "<one sentence>",
+      "suggested_fix": "<one or two sentences describing the fix>"
+    }
+  ]
+}
+```
+
+If there's nothing to address, return `{ "findings": [] }`.
+
+Keep `summary` and `suggested_fix` terse — one or two sentences each.
+The fix-applier reading these has the file open already; don't restate
+context the diff already carries.
+
+## When to flag vs. not
+
+- A `style` finding only counts if the PR's *neighbouring* code uses a
+  different convention. Don't flag general taste preferences.
+- A `test-gap` finding only counts when the missing test would have
+  caught a real bug class — not "every new function needs a test."
+- A `scope` finding is high-confidence: the diff demonstrably includes
+  a change unrelated to the issue. When in doubt, don't flag.
+- Don't include "everything looks good" notes in `findings`. Empty
+  array is the correct positive signal.
 
 ---
 
 *Adapted from [BYK/dotskills](https://github.com/BYK/dotskills)
-(Apache-2.0).*
+(Apache-2.0). The original was prose-only; this version produces
+structured output so a downstream fix-applier can act on findings
+mechanically.*

@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "@loreai/opencode@latest"
+    "file:///home/developer/.config/opencode/node_modules/@loreai/opencode"
   ]
 }

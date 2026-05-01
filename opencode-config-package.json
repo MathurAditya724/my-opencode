@@ -5,6 +5,7 @@
   "description": "Dependencies for plugins shipped under ~/.config/opencode/plugins (loaded by OpenCode at startup)",
   "type": "module",
   "dependencies": {
-    "@opencode-ai/plugin": "^1.14.30"
+    "@opencode-ai/plugin": "^1.14.30",
+    "@loreai/opencode": "latest"
   }
 }

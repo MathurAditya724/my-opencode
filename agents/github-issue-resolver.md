@@ -178,11 +178,12 @@ will:
   description).
 - Print the PR URL as the final line.
 
-You stop here. The PR is a draft so a human (or, in future, a
-follow-up webhook handler listening on `pull_request_review` /
-`check_run` events) can review feedback, address CI failures, and
-mark it ready-for-review. None of that is your responsibility from
-this session.
+You stop here. The PR is a draft. Sibling agents pick it up from
+this point: `pr-reviewer` reviews `pull_request.opened` events,
+`ci-fixer` reacts to failed `check_suite` events on the branch, and
+`pr-comment-responder` triages any review feedback. None of that is
+your responsibility from this session — your scope ends at "draft PR
+opened."
 
 ## If a tool returns permission-denied
 
