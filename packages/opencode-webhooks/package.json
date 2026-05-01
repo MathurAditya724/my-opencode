@@ -18,7 +18,7 @@
     "build": "echo 'opencode-webhooks ships raw TS — no build step needed'"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.1.0"
+    "@opencode-ai/plugin": ">=1.1.1"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.14.30",

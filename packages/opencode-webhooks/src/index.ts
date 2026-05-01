@@ -13,6 +13,17 @@ import { openDeliveryStore } from "./storage"
 export type { Trigger, WebhookConfig, NormalizedTrigger, SkippedDispatch } from "./types"
 
 export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
+  // Bun-only: we use Bun.serve, Bun.spawn, Bun.file, and bun:sqlite.
+  // OpenCode runs on Bun by default so this is normally a no-op; the
+  // check exists so consumers running an unofficial Node-based fork
+  // get a useful error instead of a cryptic ReferenceError on first
+  // dispatch.
+  if (typeof Bun === "undefined") {
+    throw new Error(
+      "opencode-webhooks requires Bun (uses Bun.serve, Bun.spawn, Bun.file, bun:sqlite). Install Bun >=1.2.0: https://bun.sh",
+    )
+  }
+
   // Don't let a dispatch bug take down the host opencode server.
   const guard = globalThis as { __ghWebhookGuard?: boolean }
   if (!guard.__ghWebhookGuard) {
