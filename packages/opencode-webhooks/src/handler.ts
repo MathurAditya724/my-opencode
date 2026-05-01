@@ -29,7 +29,7 @@ export function makeFetchHandler(opts: {
     const url = new URL(req.url)
 
     if (req.method === "GET" && url.pathname === "/healthz") {
-      return Response.json({ ok: true, plugin: "github-webhooks" })
+      return Response.json({ ok: true, plugin: "opencode-webhooks" })
     }
     if (req.method !== "POST" || url.pathname !== "/webhooks/github") {
       return new Response("not found", { status: 404 })

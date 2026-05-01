@@ -36,12 +36,12 @@ export function makeDispatcher(opts: {
       const sessionId = session.data?.id
       if (!sessionId) {
         console.error(
-          `[github-webhooks] trigger '${t.name}' (${deliveryId}): session.create returned no id`,
+          `[opencode-webhooks] trigger '${t.name}' (${deliveryId}): session.create returned no id`,
         )
         return
       }
       console.log(
-        `[github-webhooks] trigger '${t.name}' (${deliveryId}) → session ${sessionId}`,
+        `[opencode-webhooks] trigger '${t.name}' (${deliveryId}) → session ${sessionId}`,
       )
       await client.session.prompt({
         path: { id: sessionId },
@@ -52,11 +52,11 @@ export function makeDispatcher(opts: {
         signal: abort.signal,
       })
       console.log(
-        `[github-webhooks] trigger '${t.name}' (${deliveryId}) → session ${sessionId} completed`,
+        `[opencode-webhooks] trigger '${t.name}' (${deliveryId}) → session ${sessionId} completed`,
       )
     } catch (err) {
       console.error(
-        `[github-webhooks] trigger '${t.name}' (${deliveryId}) failed:`,
+        `[opencode-webhooks] trigger '${t.name}' (${deliveryId}) failed:`,
         err,
       )
     } finally {

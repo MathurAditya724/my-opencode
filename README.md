@@ -9,7 +9,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (8 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
+- **Bundled OpenCode plugin: [`opencode-webhooks`](./packages/opencode-webhooks)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (8 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/opencode-webhooks/`](./packages/opencode-webhooks) — see its [README](./packages/opencode-webhooks/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
 - **Bundled agents** (permissions pre-broadened so they don't stall on approval prompts):
   - [`github-issue-resolver`](./agents/github-issue-resolver.md) — issue assigned → branch → plan → implement → draft PR.
   - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review / review-requested / assigned → runs the `review` skill to find issues. On the bot's own PRs it spawns the `pr-fix-applier` subagent to push fixes directly. On others' PRs it posts a structured GitHub review.
@@ -52,18 +52,18 @@ See [`.env.example`](./.env.example) for the full template.
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
-| `GH_TOKEN` | For the bundled `gh` CLI **and** the `github-webhooks` plugin's identity-gated triggers. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin runs `gh api user --jq .login` at boot to resolve the bot's GitHub identity; without `GH_TOKEN`, identity-gated triggers fail closed. |
-| `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `github-webhooks` plugin. Required to receive webhooks. |
+| `GH_TOKEN` | For the bundled `gh` CLI **and** the `opencode-webhooks` plugin's identity-gated triggers. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin runs `gh api user --jq .login` at boot to resolve the bot's GitHub identity; without `GH_TOKEN`, identity-gated triggers fail closed. |
+| `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `opencode-webhooks` plugin. Required to receive webhooks. |
 | `WEBHOOK_PORT`, `WEBHOOKS_CONFIG` | Optional plugin tuning. See [`.env.example`](./.env.example). |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
 
 ## GitHub webhooks → agent sessions
 
-The bundled [`github-webhooks`](./plugins/github-webhooks.ts) plugin runs
-**inside** the OpenCode server process — no sidecar, no second process to
-supervise, no loopback HTTP. It opens its own listener on port `5050`
-(configurable via `WEBHOOK_PORT`) and dispatches verified deliveries
-into agent sessions via the in-process SDK client.
+The bundled [`opencode-webhooks`](./packages/opencode-webhooks) plugin
+runs **inside** the OpenCode server process — no sidecar, no second
+process to supervise, no loopback HTTP. It opens its own listener on
+port `5050` (configurable via `WEBHOOK_PORT`) and dispatches verified
+deliveries into agent sessions via the in-process SDK client.
 
 ### Default behavior
 
@@ -238,7 +238,7 @@ afterward — view it in OpenCode's UI like any other session.
 ### Health check
 
 `GET http://<host>:5050/healthz` (the plugin's port, not OpenCode's
-4096) returns `{ "ok": true, "plugin": "github-webhooks" }` once the
+4096) returns `{ "ok": true, "plugin": "opencode-webhooks" }` once the
 listener is up. No auth required.
 
 ## Local test
