@@ -8,6 +8,8 @@
       "event": "issues",
       "action": "assigned",
       "agent": "github-issue-resolver",
+      "ignore_authors": ["github-actions[bot]"],
+      "require_bot_match": ["assignee.login"],
       "prompt_template": "A GitHub issue has just been assigned to you. Resolve it end-to-end following your standard workflow.\n\nRepo: {{ payload.repository.full_name }}\nIssue: #{{ payload.issue.number }} — {{ payload.issue.title }}\nAssignee: {{ payload.assignee.login }}\nAuthor: {{ payload.issue.user.login }}\nURL: {{ payload.issue.html_url }}\n\nIssue body:\n---\n{{ payload.issue.body }}\n---\n\nLabels: {{ payload.issue.labels }}\n\nClone (or update) the repo under ~/dev/<owner>/<repo>, branch off the default branch, plan first, implement the smallest change that resolves the issue, push, and open a PR with `Closes #{{ payload.issue.number }}` in the body. If the change is larger than ~5 files or touches public APIs, post a comment on the issue and emit BLOCKED instead of opening a PR."
     },
     {
@@ -16,6 +18,7 @@
       "action": "opened",
       "agent": "pr-reviewer",
       "ignore_authors": ["github-actions[bot]"],
+      "require_bot_match": ["pull_request.user.login"],
       "prompt_template": "A pull request has just been opened. Review it.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }} — {{ payload.pull_request.title }}\nAuthor: {{ payload.pull_request.user.login }}\nURL: {{ payload.pull_request.html_url }}\nBase: {{ payload.pull_request.base.ref }}\nHead SHA: {{ payload.pull_request.head.sha }}\nDraft: {{ payload.pull_request.draft }}\n\nPR body:\n---\n{{ payload.pull_request.body }}\n---\n\nIf the PR is a draft, emit BLOCKED: PR is draft and stop. Otherwise check out the PR locally with `gh pr checkout`, read the diff, identify the linked issue's intent, and post a review via `gh pr review`. Default to COMMENT unless you have a specific reason to APPROVE or REQUEST_CHANGES."
     },
     {
@@ -24,6 +27,7 @@
       "action": "ready_for_review",
       "agent": "pr-reviewer",
       "ignore_authors": ["github-actions[bot]"],
+      "require_bot_match": ["pull_request.user.login"],
       "prompt_template": "A pull request has just been marked ready for review (was previously a draft). Review it.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }} — {{ payload.pull_request.title }}\nAuthor: {{ payload.pull_request.user.login }}\nURL: {{ payload.pull_request.html_url }}\nBase: {{ payload.pull_request.base.ref }}\nHead SHA: {{ payload.pull_request.head.sha }}\n\nPR body:\n---\n{{ payload.pull_request.body }}\n---\n\nFollow your standard workflow. Default to COMMENT unless you have a specific reason to APPROVE or REQUEST_CHANGES."
     },
     {
@@ -35,7 +39,7 @@
       "payload_filter": {
         "check_suite.conclusion": "failure"
       },
-      "prompt_template": "A check_suite has failed on a branch with PRs. Diagnose and fix it.\n\nRepo: {{ payload.repository.full_name }}\nCheck suite ID: {{ payload.check_suite.id }}\nHead SHA: {{ payload.check_suite.head_sha }}\nHead branch: {{ payload.check_suite.head_branch }}\nPull requests: {{ payload.check_suite.pull_requests }}\n\nFollow your standard ci-fixer workflow: check the attempt budget on the PR, find and check out the PR, read the failed job logs, categorize the failure, reproduce locally if possible, push the smallest fix, and post a 'ci-fixer:'-prefixed comment on the PR. If the budget is exhausted (3 prior attempts), emit BLOCKED instead."
+      "prompt_template": "A check_suite has failed on a branch with PRs. Diagnose and fix it — but only if it's a PR you (the bot) authored.\n\nRepo: {{ payload.repository.full_name }}\nCheck suite ID: {{ payload.check_suite.id }}\nHead SHA: {{ payload.check_suite.head_sha }}\nHead branch: {{ payload.check_suite.head_branch }}\nPull requests: {{ payload.check_suite.pull_requests }}\n\nThe check_suite payload doesn't include the PR author, so the plugin can't gate dispatch on identity. Your first step (per the ci-fixer workflow) is to verify the PR's author equals your gh login and BLOCK out otherwise. Then follow the standard ci-fixer workflow: check the attempt budget on the PR, find and check out the PR, read the failed job logs, categorize the failure, reproduce locally if possible, push the smallest fix, and post a 'ci-fixer:'-prefixed comment on the PR. If the budget is exhausted (3 prior attempts), emit BLOCKED instead."
     },
     {
       "name": "pr-review-comment",
@@ -43,7 +47,8 @@
       "action": "created",
       "agent": "pr-comment-responder",
       "ignore_authors": ["github-actions[bot]"],
-      "prompt_template": "Someone left an inline review comment on a PR. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }}\nHead SHA: {{ payload.pull_request.head.sha }}\nComment ID: {{ payload.comment.id }}\nComment author: {{ payload.comment.user.login }}\nComment URL: {{ payload.comment.html_url }}\nFile: {{ payload.comment.path }}\nLine: {{ payload.comment.line }}\n\nComment body:\n---\n{{ payload.comment.body }}\n---\n\nThis is an INLINE review comment (attached to a specific diff line). Follow your standard pr-comment-responder workflow: triage as actionable or not, fix if actionable, reply in-thread either way."
+      "require_bot_match": ["pull_request.user.login"],
+      "prompt_template": "Someone left an inline review comment on a PR you authored. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }}\nHead SHA: {{ payload.pull_request.head.sha }}\nComment ID: {{ payload.comment.id }}\nComment author: {{ payload.comment.user.login }}\nComment URL: {{ payload.comment.html_url }}\nFile: {{ payload.comment.path }}\nLine: {{ payload.comment.line }}\n\nComment body:\n---\n{{ payload.comment.body }}\n---\n\nThis is an INLINE review comment (attached to a specific diff line). Follow your standard pr-comment-responder workflow: triage as actionable or not, fix if actionable, reply in-thread either way."
     },
     {
       "name": "pr-issue-comment",
@@ -51,10 +56,11 @@
       "action": "created",
       "agent": "pr-comment-responder",
       "ignore_authors": ["github-actions[bot]"],
+      "require_bot_match": ["issue.user.login"],
       "payload_filter": {
         "issue.pull_request": "*"
       },
-      "prompt_template": "Someone left a top-level comment on a pull request. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR number: {{ payload.issue.number }}\nComment ID: {{ payload.comment.id }}\nComment author: {{ payload.comment.user.login }}\nComment URL: {{ payload.comment.html_url }}\n\nComment body:\n---\n{{ payload.comment.body }}\n---\n\nFollow your standard pr-comment-responder workflow."
+      "prompt_template": "Someone left a top-level comment on a pull request you authored. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR number: {{ payload.issue.number }}\nComment ID: {{ payload.comment.id }}\nComment author: {{ payload.comment.user.login }}\nComment URL: {{ payload.comment.html_url }}\n\nComment body:\n---\n{{ payload.comment.body }}\n---\n\nFollow your standard pr-comment-responder workflow."
     },
     {
       "name": "pr-review-submitted",
@@ -62,10 +68,11 @@
       "action": "submitted",
       "agent": "pr-comment-responder",
       "ignore_authors": ["github-actions[bot]"],
+      "require_bot_match": ["pull_request.user.login"],
       "payload_filter": {
         "review.body": "*"
       },
-      "prompt_template": "Someone submitted a PR review with a substantive body. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }}\nHead SHA: {{ payload.pull_request.head.sha }}\nReview ID: {{ payload.review.id }}\nReview state: {{ payload.review.state }} (review_state: {{ review_state }})\nReview author: {{ payload.review.user.login }}\nReview URL: {{ payload.review.html_url }}\n\nReview body:\n---\n{{ payload.review.body }}\n---\n\nIf review_state is 'approved' and the body is just a brief acknowledgement (e.g. 'lgtm', 'nice', '👍'), don't reply — silence is the right response to an approve. Reply only when the body has a concrete suggestion, question, or concern. For state='changes_requested' or state='commented' with substantive content, follow your standard pr-comment-responder workflow: triage as actionable or not, fix if actionable, reply in-thread either way."
+      "prompt_template": "Someone submitted a PR review on a PR you authored, with a substantive body. Triage and respond.\n\nRepo: {{ payload.repository.full_name }}\nPR: #{{ payload.pull_request.number }}\nHead SHA: {{ payload.pull_request.head.sha }}\nReview ID: {{ payload.review.id }}\nReview state: {{ payload.review.state }} (review_state: {{ review_state }})\nReview author: {{ payload.review.user.login }}\nReview URL: {{ payload.review.html_url }}\n\nReview body:\n---\n{{ payload.review.body }}\n---\n\nIf review_state is 'approved' and the body is just a brief acknowledgement (e.g. 'lgtm', 'nice', '👍'), don't reply — silence is the right response to an approve. Reply only when the body has a concrete suggestion, question, or concern. For state='changes_requested' or state='commented' with substantive content, follow your standard pr-comment-responder workflow: triage as actionable or not, fix if actionable, reply in-thread either way."
     }
   ]
 }
