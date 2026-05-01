@@ -151,22 +151,15 @@ export function makeFetchHandler(opts: {
   }
 }
 
-// Booleans surfaced into prompt templates that the path-only renderer
-// can't evaluate (presence checks, non-empty checks, lowercased values).
+// Values surfaced into prompt templates that the path-only renderer
+// can't compute (lowercased values, etc.). Presence/non-empty checks
+// are handled by `payload_filter: { path: "*" }` on the trigger
+// instead.
 function computeSynthetics(payload: unknown): Record<string, unknown> {
   const ev = (payload as Record<string, unknown> | null) ?? {}
-  const issuePR = lookup(ev, "issue.pull_request")
-  const reviewBody = lookup(ev, "review.body")
   const reviewState = lookup(ev, "review.state")
-  const checkConclusion =
-    lookup(ev, "check_suite.conclusion") ?? lookup(ev, "check_run.conclusion")
   return {
-    is_pr_comment:
-      issuePR !== undefined && issuePR !== null && issuePR !== "",
-    is_review_with_body:
-      typeof reviewBody === "string" && reviewBody.trim() !== "",
     review_state:
       typeof reviewState === "string" ? reviewState.toLowerCase() : null,
-    is_ci_failure: checkConclusion === "failure",
   }
 }
