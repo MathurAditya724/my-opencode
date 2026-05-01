@@ -6,6 +6,6 @@
   "type": "module",
   "dependencies": {
     "@opencode-ai/plugin": "^1.14.30",
-    "@loreai/opencode": "^0.11.1"
+    "@loreai/opencode": "latest"
   }
 }

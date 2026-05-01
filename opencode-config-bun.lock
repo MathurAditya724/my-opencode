@@ -5,7 +5,7 @@
     "": {
       "name": "opencode-config",
       "dependencies": {
-        "@loreai/opencode": "^0.11.1",
+        "@loreai/opencode": "latest",
         "@opencode-ai/plugin": "^1.14.30",
       },
     },
