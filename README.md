@@ -12,7 +12,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **Bundled OpenCode plugin: [`github-webhooks`](./plugins/github-webhooks.ts)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (8 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. See [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions).
 - **Bundled agents** (permissions pre-broadened so they don't stall on approval prompts):
   - [`github-issue-resolver`](./agents/github-issue-resolver.md) — issue assigned → branch → plan → implement → draft PR.
-  - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review / review-requested → runs the `review` skill to find issues. On the bot's own PRs it spawns the `pr-fix-applier` subagent to push fixes directly. On others' PRs it posts a structured GitHub review.
+  - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review / review-requested / assigned → runs the `review` skill to find issues. On the bot's own PRs it spawns the `pr-fix-applier` subagent to push fixes directly. On others' PRs it posts a structured GitHub review.
   - [`pr-fix-applier`](./agents/pr-fix-applier.md) — subagent invoked by `pr-reviewer`. Takes a list of findings, implements each, runs deslop + tests, pushes a single commit. Doesn't touch GitHub UI.
   - [`ci-fixer`](./agents/ci-fixer.md) — `check_suite.completed` with `conclusion: failure` → diagnoses the failure → pushes the smallest fix → comments on the PR. Capped at 3 attempts per PR.
   - [`pr-comment-responder`](./agents/pr-comment-responder.md) — review comment / PR comment / review submitted → triages → fixes if actionable, replies in either case.
@@ -74,13 +74,14 @@ together cover an issue's full lifecycle through merge:
 | Trigger | GitHub event (`event.action`) | Identity gate (`require_bot_match`) | Payload gate (`payload_filter`) | Agent |
 |---|---|---|---|---|
 | `issue-assigned` | `issues.assigned` | `assignee.login` | — | `github-issue-resolver` |
-| `pr-opened` | `pull_request.opened` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` | — | `pr-reviewer` |
-| `pr-ready-for-review` | `pull_request.ready_for_review` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` | — | `pr-reviewer` |
+| `pr-opened` | `pull_request.opened` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | — | `pr-reviewer` |
+| `pr-ready-for-review` | `pull_request.ready_for_review` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | — | `pr-reviewer` |
 | `pr-review-requested` | `pull_request.review_requested` | `requested_reviewer.login` OR `pull_request.requested_reviewers[*].login` | — | `pr-reviewer` |
-| `ci-failed` | `check_suite.completed` | (agent-side, see note) | `check_suite.conclusion = "failure"` | `ci-fixer` |
-| `pr-review-comment` | `pull_request_review_comment.created` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` | — | `pr-comment-responder` |
-| `pr-issue-comment` | `issue_comment.created` | `issue.user.login` | `issue.pull_request` exists | `pr-comment-responder` |
-| `pr-review-submitted` | `pull_request_review.submitted` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` | `review.body` non-empty | `pr-comment-responder` |
+| `pr-assigned` | `pull_request.assigned` | `assignee.login` OR `pull_request.assignees[*].login` | — | `pr-reviewer` |
+| `ci-failed` | `check_suite.completed` | (agent-side, see note) | `check_suite.conclusion = "failure"` AND `check_suite.pull_requests` non-empty | `ci-fixer` |
+| `pr-review-comment` | `pull_request_review_comment.created` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | — | `pr-comment-responder` |
+| `pr-issue-comment` | `issue_comment.created` | `issue.user.login` OR `issue.assignees[*].login` | `issue.pull_request` exists | `pr-comment-responder` |
+| `pr-review-submitted` | `pull_request_review.submitted` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | `review.body` non-empty | `pr-comment-responder` |
 
 **`require_bot_match`** scopes each agent to work that's *addressed
 to the bot*: only fire when the configured payload field equals the
@@ -91,14 +92,18 @@ paths). The bot's identity is auto-resolved at boot via `gh api user
 the array's `.login` equals the bot. Concretely:
 
 - `github-issue-resolver` only fires on issues assigned to the bot.
-- `pr-reviewer` fires on PRs the bot **either authored** (self-review
-  pass) **or was added as a requested reviewer on** (real review of
-  someone else's work).
+- `pr-reviewer` fires on PRs the bot is involved in: **authored**
+  (self-review pass), **added as a requested reviewer**, or
+  **assigned**. GitHub treats "Assignees" and "Reviewers" as
+  semantically distinct (sidebar sections), but for this bot they're
+  equivalent — both mean "look at this PR." The dedicated
+  `pr-assigned` trigger fires when the bot is added via the
+  Assignees sidebar after the PR is already open.
 - `pr-comment-responder` fires on comments / reviews on PRs the bot
-  is involved in (author or requested reviewer); top-level PR
-  comments via `pr-issue-comment` are author-only because the
-  `issue_comment` payload doesn't carry the requested-reviewers
-  array.
+  is involved in (author, requested reviewer, or assignee).
+  Top-level PR comments via `pr-issue-comment` use `issue.user.login
+  OR issue.assignees[*].login` because the `issue_comment` payload
+  doesn't carry a requested-reviewers array.
 - `ci-fixer` is the exception: `check_suite` payloads don't include
   the PR author, so the agent does the `gh pr view --json author`
   check itself as step 0 and `BLOCKED`s out if the PR isn't its.
@@ -126,7 +131,8 @@ automatically. No further setup needed.
 Most triggers in the bundled `webhooks.json` don't filter the bot's
 own actions — they're meant to fire on them. When the bot opens a PR,
 `pr-opened` should fire so the bot can self-review; when the bot is
-added as a requested reviewer, `pr-review-requested` should fire.
+added as a requested reviewer, `pr-review-requested` should fire;
+when the bot is added as an assignee, `pr-assigned` should fire.
 Filtering the bot here would defeat the agents' core purpose.
 
 The exception is the comment-related triggers:
@@ -198,7 +204,7 @@ Field reference:
 | `triggers[].event` | ✓ | GitHub event header (`issues`, `pull_request`, `push`, ...). Use `"*"` to match anything. |
 | `triggers[].action` | optional | If set, must match the payload's `action` exactly. Omit/`null` to match any action of this event. |
 | `triggers[].agent` | ✓ | Agent name to invoke (built-in or from `agents/`). |
-| `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. Synthetic booleans available: `is_pr_comment`, `is_review_with_body`, `review_state`, `is_ci_failure`. |
+| `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. Synthetic value available: `review_state` (lowercased `payload.review.state`). For presence/non-empty gating, use `payload_filter` with `"*"` instead of a synthetic. |
 | `triggers[].cwd` | optional | Override the session's working directory. Falls back to `default_cwd`, then to OpenCode's project root. |
 | `triggers[].ignore_authors` | optional | List of GitHub logins to filter out (case-insensitive, exact match) on `payload.sender.login`. The literal string `"$BOT_LOGIN"` is substituted with the auto-resolved bot login at boot. Use this on triggers where the bot would otherwise re-fire on its own webhook activity (e.g. comment replies). |
 | `triggers[].require_bot_match` | optional | List of dotted payload paths whose string value (case-insensitive) must equal the bot's resolved gh login for the trigger to fire. Paths support a `[*]` wildcard for arrays (`requested_reviewers[*].login`). OR semantics across paths. Empty/absent = no gate. Skips with `none of [paths] matched bot login 'X'` on miss, or `bot identity unresolved` if `gh api user` failed at boot (fail-closed). |

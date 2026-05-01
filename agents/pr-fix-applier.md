@@ -12,7 +12,9 @@ permission:
   webfetch: allow
   websearch: allow
   codesearch: allow
-  task: allow
+  # Subagents shouldn't spawn further subagents — denying task here
+  # prevents accidental recursion and keeps the call graph flat.
+  task: deny
   todowrite: allow
   lsp: allow
   skill: allow
@@ -47,9 +49,14 @@ If the branch is `main`/`master`/the repo's default, emit
 `BLOCKED: refusing to push to default branch` and stop. The parent
 agent should have handled checkout; if it didn't, you don't.
 
-If `git status` shows uncommitted changes, those are the parent
-agent's WIP — emit `BLOCKED: working tree dirty` and stop. You're
-not equipped to merge with someone else's in-progress edits.
+If `git status --porcelain` shows **staged** changes (lines starting
+with anything other than `??` or ` ` in column 1), those are the
+parent agent's in-progress commit — emit `BLOCKED: staged changes
+present` and stop; merging with someone else's WIP is out of scope.
+
+Untracked files (`??`) and unstaged worktree noise are fine: the
+`review` skill or a sub-agent may have left a scratch file in the
+cwd. You'll stage only files you yourself edited (see step 6).
 
 ### 2. Plan the fixes
 
@@ -89,10 +96,12 @@ Load the `deslop` skill (`skill({ name: "deslop" })`).
 
 ### 6. Commit and push
 
-One commit covering all the fixes:
+One commit covering all the fixes. Stage only files you edited (not
+`-A`, since untracked scratch from a sub-agent or skill may be in
+the worktree):
 
 ```sh
-git add -A
+git add <file1> <file2> ...   # explicit paths from your step 3 edits
 git commit -m "Address review findings" -m "<short body listing what was changed>"
 git push
 ```

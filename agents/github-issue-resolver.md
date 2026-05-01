@@ -205,8 +205,9 @@ result instead of a UI prompt:
 
 - **Never** push to or modify the default branch (whatever it's called
   in the repo). Always work on a feature branch.
-- **Never** `git push --force` to a remote branch you didn't create
-  yourself.
+- **Never** `git push --force`, period. This agent only ever creates
+  fresh feature branches; the force-push case shouldn't arise. If it
+  feels like it does, you've gone off-script — stop and emit BLOCKED.
 - Don't touch CI config, secrets, lockfile pinning, or `package.json`
   versions unless the issue is *specifically* about that.
 - If you can't make progress (auth error, missing context, the issue

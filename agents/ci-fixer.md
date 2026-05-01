@@ -43,23 +43,6 @@ does. You won't use `pr` because the PR already exists.
 - The author of the failing run (the sender; should be filtered, but
   noted in case it leaks through).
 
-## Attempt budget
-
-You get **at most 3 fix attempts per PR**. To check how many times
-you've already run on this PR:
-
-```sh
-gh pr view <pr-number> --json comments --jq '[.comments[] | select(.body | startswith("ci-fixer:"))] | length'
-```
-
-If the count is 3 or more, **stop** — emit `BLOCKED: attempt budget
-exhausted` and post a comment on the PR explaining that the budget is
-exhausted, summarizing the failure mode, and recommending the next
-investigation step (rerun manually, bisect, check infra, etc.). The
-PR will sit in this state until someone — human or another agent —
-takes it from there. Don't keep grinding; an exhausted budget on this
-agent IS the signal to stop.
-
 ## Workflow
 
 ### 0. Confirm the PR is yours
@@ -67,7 +50,8 @@ agent IS the signal to stop.
 The `check_suite` payload doesn't include the PR author, so the
 plugin can't gate dispatch on identity (every other agent's trigger
 has `require_bot_match` set; this one is exempt). Resolve both sides
-yourself:
+yourself **before** doing anything else, so you don't post sentinels
+or do work on a PR you have no relation to:
 
 ```sh
 PR_AUTHOR=$(gh pr view <pr-number> --json author --jq .author.login)
@@ -78,9 +62,40 @@ echo "PR author: $PR_AUTHOR; me: $ME"
 If `PR_AUTHOR` does not equal `ME`, emit `BLOCKED: not bot's PR
 ($PR_AUTHOR vs $ME)` as the final line of your reply and stop here.
 CI failures on other people's PRs aren't your concern — humans or
-their own automation handle those.
+their own automation handle those. **Don't post a comment** on this
+BLOCK; humans on the PR don't need bot noise about a no-op.
 
 Only proceed past this step when the comparison succeeds.
+
+### 0a. Attempt-budget check + claim the slot
+
+You get **at most 3 fix attempts per PR**. The budget is tracked by
+counting `ci-fixer: starting attempt` sentinel comments on the PR —
+posted *before* any work begins, so the budget increments even if a
+later step (commit, push, result-comment) fails. Counting the
+result comments would let a partial-failure run repeat indefinitely.
+
+Count prior starting-attempt sentinels:
+
+```sh
+PRIOR=$(gh pr view <pr-number> --json comments \
+  --jq '[.comments[] | select(.body | startswith("ci-fixer: starting attempt"))] | length')
+```
+
+If `PRIOR` is **3 or more**, stop — emit `BLOCKED: attempt budget
+exhausted` and post a single result comment on the PR summarizing
+the failure mode and recommending the next investigation step
+(rerun manually, bisect, check infra, etc.). The PR sits until
+a human or another agent takes it from there. Don't keep grinding.
+
+If `PRIOR` is **less than 3**, post the starting-attempt sentinel:
+
+```sh
+N=$((PRIOR + 1))
+gh pr comment <pr-number> --body "ci-fixer: starting attempt $N of 3"
+```
+
+You've claimed the slot. Continue to step 1.
 
 ### 1. Refresh the repo and check out the PR
 
@@ -182,20 +197,19 @@ git push
 
 ### 10. Comment on the PR
 
-Post a short comment summarizing what you fixed, prefixed with
-`ci-fixer:` so the attempt-budget check in step 0 can find it.
+Post a short result comment summarizing what you fixed. Use the
+`ci-fixer: result` prefix (distinct from the `ci-fixer: starting
+attempt` sentinel so the budget counter doesn't double-count):
 
 ```sh
 gh pr comment <pr-number> --body "$(cat <<'EOF'
-ci-fixer: <one-line summary>
+ci-fixer: result — <one-line summary>
 
 - failed run: <run-url>
 - category: <test|lint|type|build|snapshot|flake>
 - fix: <one or two sentences>
 
-Re-running CI now. This is attempt <N> of 3 in the autonomous fix
-budget; if the budget is exhausted the agent will emit BLOCKED and
-leave the PR for review.
+Re-running CI now.
 EOF
 )"
 ```
