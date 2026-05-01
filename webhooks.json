@@ -35,7 +35,6 @@
       "event": "check_suite",
       "action": "completed",
       "agent": "ci-fixer",
-      "ignore_authors": ["github-actions[bot]"],
       "payload_filter": {
         "check_suite.conclusion": "failure"
       },

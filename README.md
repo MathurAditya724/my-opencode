@@ -51,7 +51,7 @@ See [`.env.example`](./.env.example) for the full template.
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
-| `GH_TOKEN` | For the bundled `gh` CLI. PAT with the scopes you need. |
+| `GH_TOKEN` | For the bundled `gh` CLI **and** the `github-webhooks` plugin's identity-gated triggers. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin runs `gh api user --jq .login` at boot to resolve the bot's GitHub identity; without `GH_TOKEN`, identity-gated triggers fail closed. |
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `github-webhooks` plugin. Required to receive webhooks. |
 | `WEBHOOK_PORT`, `WEBHOOKS_CONFIG` | Optional plugin tuning. See [`.env.example`](./.env.example). |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
@@ -115,11 +115,18 @@ automatically. No further setup needed.
 
 ### Stopping the bot from triggering itself
 
-Every trigger has a baked-in `ignore_authors: ["github-actions[bot]"]`
-so workflow-driven check events don't fire the agents. The bot's own
-gh login is auto-appended at boot (resolved via `gh api user`), so
-when its own commits / comments / reviews emit fresh webhooks the
-agents don't re-trigger themselves either.
+Every trigger except `ci-failed` has a baked-in
+`ignore_authors: ["github-actions[bot]"]` so workflow-driven check
+events don't fire the agents. The bot's own gh login is auto-appended
+at boot (resolved via `gh api user`), so when its own commits /
+comments / reviews emit fresh webhooks the agents don't re-trigger
+themselves either.
+
+`ci-failed` is the exception: the sender on `check_suite.completed`
+events IS `github-actions[bot]` (that's how CI uploads results). If
+we filtered that out, ci-fixer would never run. Identity scoping for
+this trigger is enforced agent-side via `gh pr view --json author` in
+the agent's step 0.
 
 If you want explicit operator override (e.g. the gh CLI auth is to a
 different identity than the bot's commit author), set:
@@ -128,9 +135,21 @@ different identity than the bot's commit author), set:
 BOT_LOGIN=<gh-login>
 ```
 
-(Or `BOT_LOGINS=foo,bar` for multiple accounts.) When `BOT_LOGIN` is
-set, it replaces the auto-resolved value in `ignore_authors`.
-`BOT_LOGINS` is always additive on top.
+(Or `BOT_LOGINS=foo,bar` for multiple accounts.)
+
+> **Important — the two scopes don't overlap.** `BOT_LOGIN` only
+> affects `ignore_authors` (the self-loop guard). The
+> `require_bot_match` identity gate ALWAYS uses the auto-resolved
+> `gh api user` value and ignores `BOT_LOGIN`. This is deliberate:
+> webhook payloads carry the bot's GitHub identity (the gh-resolved
+> one), not its commit-author identity, so that's what gates "is this
+> work for me?" If the two identities differ, set `BOT_LOGIN` for the
+> commit-author identity and let `gh api user` handle the GitHub
+> identity automatically.
+>
+> When `BOT_LOGIN` is set, it replaces the auto-resolved value in
+> `ignore_authors` (so you don't double-count). `BOT_LOGINS` is always
+> additive on top of whichever single value is in effect.
 
 ### Overriding the default config
 
