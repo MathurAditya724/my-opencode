@@ -62,6 +62,26 @@ agent IS the signal to stop.
 
 ## Workflow
 
+### 0. Confirm the PR is yours
+
+The `check_suite` payload doesn't include the PR author, so the
+plugin can't gate dispatch on identity (every other agent's trigger
+has `require_bot_match` set; this one is exempt). Verify here as
+your very first step:
+
+```sh
+PR_AUTHOR=$(gh pr view <pr-number> --json author --jq .author.login)
+ME=$(gh api user --jq .login)
+if [ "$PR_AUTHOR" != "$ME" ]; then
+  echo "BLOCKED: PR not authored by bot ($PR_AUTHOR vs $ME)"
+  exit 0
+fi
+```
+
+If the PR isn't yours, emit `BLOCKED: not bot's PR` as the final
+line of your reply and stop. CI failures on other people's PRs
+aren't your concern — humans or their own automation handle those.
+
 ### 1. Refresh the repo and check out the PR
 
 ```sh
