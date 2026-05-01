@@ -66,7 +66,7 @@ Minimal config:
 | `port` | `5050` (or `WEBHOOK_PORT`) | TCP port for the listener. |
 | `secret` | `GITHUB_WEBHOOK_SECRET` env | GitHub HMAC secret. Without it, `/webhooks/github` rejects every delivery with 503. |
 | `email_secret` | `EMAIL_WEBHOOK_SECRET` env | Shared HMAC secret with the Cloudflare email worker. Without it, `/webhooks/email` rejects every delivery with 503. Only required if you have at least one `source: "email"` trigger. |
-| `email_allowed_senders` | `[]` | Defense-in-depth re-check of the email worker's `ALLOWED_SENDERS` list. Array of exact strings (case-insensitive) or `/regex/` patterns, e.g. `["notifications@github.com", "/^.*@github\\.com$/"]`. When non-empty, the email handler rejects requests whose `x-email-from` doesn't match. |
+| `email_allowed_senders` | `[]` | Defense-in-depth re-check of the email worker's `ALLOWED_SENDERS` list. Array of exact strings (case-insensitive) or `/regex/` patterns, e.g. `["notifications@github.com", "/^.*@github\\.com$/"]`. When non-empty, the email handler rejects requests whose JSON `from` field doesn't match. |
 | `timeout_ms` | `1800000` (30 min) | Per-session abort budget. |
 | `max_concurrent` | `2` | Concurrency cap across all triggers. |
 | `default_cwd` | OpenCode project root | Fallback session cwd when a trigger doesn't override. |

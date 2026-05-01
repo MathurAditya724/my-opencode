@@ -43,7 +43,7 @@ GitHub  ──email──▶  gh@yourdomain.com
 2. **Edit config**.
    - `wrangler.json` → `vars.WEBHOOK_URL` — public URL of your opencode-webhooks endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network.
    - `wrangler.json` → `vars.FORWARD_TO` — destination address for the verbatim forward (e.g. `you@yourdomain.com`). **Must be verified in Cloudflare Email Routing first** (Email Routing → Destination addresses → Add). Leave unset (or remove the key) to skip forwarding entirely.
-   - `src/index.ts` → `ALLOWED_SENDERS` — TypeScript const at the top of the file. Exact strings are case-insensitive matches; strings of the form `/regex/` are treated as case-insensitive regex. Default allows `notifications@github.com` and any `*@github.com`. Compiles once at module load (zero per-request overhead).
+   - `src/index.ts` → `ALLOWED_SENDERS` — TypeScript const at the top of the file. Exact strings are case-insensitive matches; strings of the form `/regex/` are treated as case-insensitive regex. Default allows `notifications@github.com` and any `*@github.com`. Compiles once at module load (zero per-request overhead). A malformed regex literal will throw at module init and the worker won't start — fix the literal and redeploy.
    - `wrangler.json` → `observability.logs.enabled` — set to `true` (default in this repo) so you can `wrangler tail` and see structured logs in the Cloudflare dashboard.
 
 3. **Set the shared HMAC secret**:

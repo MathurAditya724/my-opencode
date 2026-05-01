@@ -18,7 +18,7 @@ import {
 import { type EmailEvent, identifyEmail } from "../email/identity"
 import { synthesizePayload } from "../email/synthesize"
 import { verifySha256Signature } from "../hmac"
-import { computeSynthetics, readBodyBytes } from "../http"
+import { MAX_EMAIL_BODY_BYTES, computeSynthetics, readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
 import type { DeliveryStore } from "../storage"
 import { lookupString } from "../template"
@@ -55,7 +55,7 @@ export function makeEmailFetchHandler(opts: {
     // bytes, and HMAC must be over the exact bytes received (not a
     // re-serialized JSON.stringify(JSON.parse(…)) which is allowed to
     // re-order keys).
-    const body = await readBodyBytes(req)
+    const body = await readBodyBytes(req, MAX_EMAIL_BODY_BYTES)
     if (!body.ok) return body.response
 
     const signature = req.headers.get("x-email-signature-256")
@@ -195,14 +195,19 @@ function parseEmailEvent(raw: string): EmailEvent {
     throw new Error("body is not an object")
   }
   const o = obj as Record<string, unknown>
-  const str = (v: unknown): string => (typeof v === "string" ? v : "")
+  const str = (v: unknown, name: string): string => {
+    if (typeof v !== "string") {
+      throw new Error(`field '${name}' must be a string, got ${typeof v}`)
+    }
+    return v
+  }
   const strOrNull = (v: unknown): string | null =>
     typeof v === "string" ? v : null
   return {
-    from: str(o.from),
-    to: str(o.to),
-    subject: str(o.subject),
-    message_id: str(o.message_id),
+    from: str(o.from, "from"),
+    to: str(o.to, "to"),
+    subject: str(o.subject, "subject"),
+    message_id: str(o.message_id, "message_id"),
     in_reply_to: strOrNull(o.in_reply_to),
     references: Array.isArray(o.references)
       ? o.references.filter((s): s is string => typeof s === "string")
