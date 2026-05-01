@@ -22,3 +22,7 @@ Thumbs.db
 # Build artifacts / logs
 **/node_modules
 *.log
+
+# Cloudflare Email Worker — deployed independently with `wrangler deploy`,
+# not needed inside the runtime image.
+packages/cloudflare-email-worker

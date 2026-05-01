@@ -1,8 +1,13 @@
 # opencode-webhooks
 
-OpenCode plugin: receive GitHub webhooks and dispatch them to OpenCode agent sessions running in the same process.
+OpenCode plugin: receive GitHub webhooks (or Cloudflare-forwarded GitHub notification emails) and dispatch them to OpenCode agent sessions running in the same process.
 
-When a configured webhook arrives, the plugin verifies the HMAC signature, deduplicates by `X-GitHub-Delivery`, runs identity/payload gating, renders a prompt template against the payload, and starts a new OpenCode agent session via the in-process SDK client.
+When a configured webhook arrives, the plugin verifies the HMAC signature, deduplicates by delivery id, runs identity/payload gating, renders a prompt template against the payload, and starts a new OpenCode agent session via the in-process SDK client.
+
+Two ingest sources are supported:
+
+- **`source: "github_webhook"`** (default) — classic GitHub webhook deliveries to `POST /webhooks/github`. Standard event/action matching against `X-GitHub-Event`.
+- **`source: "email"`** — GitHub notification emails forwarded by a Cloudflare Email Worker to `POST /webhooks/email`. The plugin parses RFC822 headers, identifies the referenced issue/PR via `Message-ID`, fetches canonical state from the GitHub API via `gh`, and dispatches the synthesized payload — same shape an actual webhook would produce, so existing agents work unchanged.
 
 > **Runtime: Bun ≥ 1.2.** Uses `Bun.serve`, `Bun.spawn`, and `bun:sqlite`.
 
@@ -59,7 +64,9 @@ Minimal config:
 | Field | Default | Description |
 |---|---|---|
 | `port` | `5050` (or `WEBHOOK_PORT`) | TCP port for the listener. |
-| `secret` | `GITHUB_WEBHOOK_SECRET` env | HMAC secret. Without one, every delivery is rejected with 503. |
+| `secret` | `GITHUB_WEBHOOK_SECRET` env | GitHub HMAC secret. Without it, `/webhooks/github` rejects every delivery with 503. |
+| `email_secret` | `EMAIL_WEBHOOK_SECRET` env | Shared HMAC secret with the Cloudflare email worker. Without it, `/webhooks/email` rejects every delivery with 503. Only required if you have at least one `source: "email"` trigger. |
+| `email_allowed_senders` | `[]` | Defense-in-depth re-check of the email worker's `ALLOWED_SENDERS` list. Array of exact strings (case-insensitive) or `/regex/` patterns, e.g. `["notifications@github.com", "/^.*@github\\.com$/"]`. When non-empty, the email handler rejects requests whose `x-email-from` doesn't match. |
 | `timeout_ms` | `1800000` (30 min) | Per-session abort budget. |
 | `max_concurrent` | `2` | Concurrency cap across all triggers. |
 | `default_cwd` | OpenCode project root | Fallback session cwd when a trigger doesn't override. |
@@ -72,8 +79,9 @@ Minimal config:
 | Field | Required | Description |
 |---|---|---|
 | `name` | yes | Unique per-config; used in logs. |
-| `event` | yes | GitHub event header (`issues`, `pull_request`, `*` for any). |
-| `action` | no | If set, must match `payload.action` exactly. Omit/`null` = any action. |
+| `source` | no | `"github_webhook"` (default) or `"email"`. Selects which listener path the trigger fires from. |
+| `event` | yes | For `source=github_webhook`: GitHub event header (`issues`, `pull_request`, `*` for any). For `source=email`: synthetic event of the form `email.<reason>` where `<reason>` is the `X-GitHub-Reason` header value (lowercased), e.g. `email.mention`, `email.review_requested`, `email.assign`, `email.comment`. |
+| `action` | no | If set, must match `payload.action` exactly. Omit/`null` = any action. Email triggers always have `action=null`. |
 | `agent` | yes | OpenCode agent name to invoke. |
 | `prompt_template` | yes | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths; missing renders empty. Synthetic `{{ review_state }}` is the lowercased `payload.review.state`. |
 | `cwd` | no | Override session cwd. Falls back to `default_cwd`. |
@@ -97,8 +105,9 @@ If `gh` isn't installed or `GH_TOKEN` isn't set, identity-gated triggers refuse 
 
 | Variable | Purpose |
 |---|---|
-| `GITHUB_WEBHOOK_SECRET` | HMAC secret for `X-Hub-Signature-256` verification. Same value you set in GitHub's webhook config. |
-| `GH_TOKEN` | GitHub PAT, read by `gh` CLI for `gh api user`. Required for identity-gated triggers. |
+| `GITHUB_WEBHOOK_SECRET` | HMAC secret for `X-Hub-Signature-256` verification on `/webhooks/github`. Same value you set in GitHub's webhook config. |
+| `EMAIL_WEBHOOK_SECRET` | Shared HMAC secret with the Cloudflare email worker, verified against `X-Email-Signature-256` on `/webhooks/email`. |
+| `GH_TOKEN` | GitHub PAT, read by `gh` CLI for `gh api user` and for synthesizing email payloads via `gh api`. Required for identity-gated triggers and all email triggers. |
 | `WEBHOOK_PORT` | Override listener port (default 5050). |
 | `WEBHOOKS_CONFIG` | Path to `webhooks.json` (default `~/.config/opencode/webhooks.json`). |
 
@@ -108,11 +117,9 @@ If `gh` isn't installed or `GH_TOKEN` isn't set, identity-gated triggers refuse 
 GET /healthz → 200 { ok: true, plugin: "opencode-webhooks" }
 ```
 
-## Webhook endpoint
+## Webhook endpoints
 
-```
-POST /webhooks/github
-```
+### `POST /webhooks/github`
 
 Required headers:
 
@@ -120,14 +127,28 @@ Required headers:
 - `X-GitHub-Delivery` — UUID for dedup.
 - `X-Hub-Signature-256` — `sha256=<hex>` HMAC of the raw body using `GITHUB_WEBHOOK_SECRET`.
 
-Returns 200 on accept, 401 on bad signature, 409 on duplicate delivery, 404 on path mismatch, 503 if the listener is starting up or the secret is unconfigured.
+Body: GitHub event JSON.
+
+### `POST /webhooks/email`
+
+Forwarded by the Cloudflare email worker. Required headers:
+
+- `X-Email-Signature-256` — `sha256=<hex>` HMAC of the raw body using `EMAIL_WEBHOOK_SECRET`.
+- `X-Email-From` — RFC5322 `From` value of the email.
+- `X-Email-To` — RFC5322 `To` value.
+- `X-Email-Message-ID` — Message-ID (also re-parsed from the body).
+
+Body: raw RFC822 message (`Content-Type: message/rfc822`). Only headers are read; the body is never passed to the LLM. Canonical state for the referenced issue/PR/comment is fetched from the GitHub API via `gh`.
+
+Both endpoints return 200 on accept (including drops/duplicates with a `dropped` or `duplicate` field), 401 on bad signature, 403 on email allowlist mismatch, 404 on path mismatch, 413 on oversized body, 503 if the corresponding secret is unconfigured.
 
 ## Limitations
 
 - Single-process plugin; shares the OpenCode server's process. An unhandled rejection inside the dispatcher could crash the host server. The plugin installs a top-level `unhandledRejection` handler, but consumers should still pin OpenCode versions.
-- One trigger fires per inbound delivery. If multiple triggers' filters match, only the first (by config order) runs.
+- Every matching enabled trigger fires per delivery — there's no first-match-only mode. Use `enabled: false` or tighter filters to suppress overlap.
 - No built-in rate limiting beyond `max_concurrent`. A burst of 200 deliveries in a second will queue at the semaphore but not be dropped.
 - `bun:sqlite` is required for delivery dedup. The plugin won't run on Node.
+- Email ingestion only covers what GitHub already sends to your inbox: mentions, review requests, assignments, comments on PRs/issues you're involved in. It is not a substitute for `push` / `check_suite` / `release` events — those still need a real GitHub webhook (or App).
 
 ## License
 
