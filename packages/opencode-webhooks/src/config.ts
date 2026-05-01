@@ -46,6 +46,7 @@ export function normalizeTrigger(
   }
   return {
     ...t,
+    source: t.source ?? "github_webhook",
     action: t.action ?? null,
     enabled: t.enabled !== false,
     ignore_authors: merged.length > 0 ? merged : undefined,

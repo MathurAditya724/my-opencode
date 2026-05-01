@@ -1,8 +1,16 @@
 // Shared types for the opencode-webhooks plugin.
 
+export type TriggerSource = "github_webhook" | "email"
+
 export type Trigger = {
   name: string
-  event: string                 // "issues" | "pull_request" | "*"
+  // Where the event originates. Defaults to "github_webhook" so existing
+  // configs keep working unchanged.
+  source?: TriggerSource
+  // For source=github_webhook: GitHub event header (e.g. "issues", "*").
+  // For source=email:          synthetic event "email.<reason>"
+  //                            (e.g. "email.mention", "email.review_requested").
+  event: string
   action?: string | null        // e.g. "assigned"; null = any action
   agent: string
   prompt_template: string       // {{ payload.foo.bar }} placeholders
@@ -22,7 +30,12 @@ export type Trigger = {
 
 export type WebhookConfig = {
   port?: number
-  secret?: string               // falls back to GITHUB_WEBHOOK_SECRET
+  secret?: string               // GitHub HMAC; falls back to GITHUB_WEBHOOK_SECRET
+  email_secret?: string         // Email-worker HMAC; falls back to EMAIL_WEBHOOK_SECRET
+  // Defense-in-depth re-check of the email worker's From-address
+  // allowlist. Same format as the worker's ALLOWED_SENDERS: array of
+  // exact-match strings or "/regex/" patterns.
+  email_allowed_senders?: string[]
   timeout_ms?: number           // per-session abort, default 30 min
   max_concurrent?: number       // default 2
   default_cwd?: string          // fallback session cwd
@@ -31,7 +44,8 @@ export type WebhookConfig = {
   triggers?: Trigger[]
 }
 
-export type NormalizedTrigger = Omit<Trigger, "action" | "enabled"> & {
+export type NormalizedTrigger = Omit<Trigger, "action" | "enabled" | "source"> & {
+  source: TriggerSource
   action: string | null
   enabled: boolean
 }

@@ -3,6 +3,10 @@
   "timeout_ms": 1800000,
   "retention": 1000,
   "db_path": "/home/developer/dev/.opencode/github-webhooks.sqlite",
+  "email_allowed_senders": [
+    "notifications@github.com",
+    "/^.*@github\\.com$/"
+  ],
   "triggers": [
     {
       "name": "issue-assigned",
