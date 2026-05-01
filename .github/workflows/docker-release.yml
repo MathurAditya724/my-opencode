@@ -1,0 +1,143 @@
+# Manual release workflow for the my-opencode container image.
+#
+# Triggered via the Actions tab → "Run workflow" with a required version
+# input (semver-like, e.g. `0.1.0` or `v0.1.0`). Builds the image and
+# pushes to ghcr.io with two tags: the exact version and `:latest`.
+# After a successful push, creates and pushes a matching `v<version>`
+# git tag on the same commit the image was built from.
+#
+# Why manual-only: releases should be intentional. We don't want a stray
+# merge to main to ship an image, and we don't want to maintain a
+# separate `v*`-tag-driven workflow when the operator count is small.
+#
+# Build smoke-tests (no push) live in docker-build.yml — that workflow
+# stays in place and runs on every PR. This file is for releases only.
+#
+# First-release setup: ghcr.io packages start private by default. After
+# the first successful run, flip visibility in the ghcr UI:
+# Profile → Packages → my-opencode → Package settings → Change visibility.
+name: docker-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version, semver-like (e.g. 0.1.0, 1.2.3-rc1, or v0.1.0)"
+        required: true
+        type: string
+
+# Prevent two simultaneous releases of the same version. Different
+# versions can build in parallel; that's intentional.
+concurrency:
+  group: docker-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # IMAGE_NAME resolves to ghcr.io/<owner>/<repo> in lowercase, e.g.
+  # ghcr.io/mathuraditya724/my-opencode. ghcr requires lowercase.
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    name: build + push (linux/amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # Required to push to ghcr.io under the repo namespace.
+      packages: write
+      # Required for the final `git tag` + `git push` step.
+      contents: write
+    steps:
+      - name: Validate version input
+        id: version
+        run: |
+          raw="${{ inputs.version }}"
+          # Strip optional leading `v` for the image tag; re-add for the git tag.
+          stripped="${raw#v}"
+          # Semver-ish: MAJOR.MINOR.PATCH with optional prerelease suffix.
+          if ! printf '%s' "$stripped" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "::error::Version '$raw' is not semver-shaped (expected MAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
+          echo "image_tag=$stripped" >> "$GITHUB_OUTPUT"
+          echo "git_tag=v$stripped" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Need full history so we can push tags. Default fetch-depth=1
+          # prevents `git push origin <tag>` if the tag points at a
+          # commit not in the shallow clone (rare but observed).
+          fetch-depth: 0
+
+      - name: Refuse to overwrite an existing tag
+        run: |
+          tag="${{ steps.version.outputs.git_tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::Tag '$tag' already exists on origin. Pick a new version or delete the tag manually if this is intentional."
+            exit 1
+          fi
+
+      - name: Lowercase image name
+        # ghcr requires the path component lowercase; github.repository
+        # preserves owner casing. Most repos already lowercase so this
+        # is usually a no-op, but be defensive.
+        id: image
+        run: |
+          echo "name=$(printf '%s' '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.version.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest
+          # Pull from the smoke-build cache when possible (its layers are
+          # likely warm), but write to a separate scope so a release push
+          # doesn't mutate the smoke-build cache that PRs depend on.
+          cache-from: |
+            type=gha
+            type=gha,scope=release
+          cache-to: type=gha,mode=max,scope=release
+          # OCI labels for ghcr's UI + provenance.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.image_tag }}
+
+      # Tag push is last, after a successful image push. If the build
+      # fails, no git tag is created, so the repo state stays consistent
+      # with what was actually shipped.
+      - name: Create and push git tag
+        run: |
+          tag="${{ steps.version.outputs.git_tag }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag"
+          git push origin "$tag"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Released \`${{ steps.version.outputs.git_tag }}\`"
+            echo
+            echo "**Image tags pushed:**"
+            echo "- \`${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.version.outputs.image_tag }}\`"
+            echo "- \`${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest\`"
+            echo
+            echo "**Git tag pushed:** \`${{ steps.version.outputs.git_tag }}\` → ${{ github.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"
