@@ -143,32 +143,15 @@ respond to its own replies and loop forever. They use a special
 "ignore_authors": ["$BOT_LOGIN"]
 ```
 
-The plugin substitutes this with the auto-resolved bot login at boot
-(the same value used by `require_bot_match`). If the gh identity
-isn't resolvable, the placeholder is silently dropped — the trigger
-simply doesn't filter, which is the safer failure (better to run a
-duplicate session than to silently never fire).
+The plugin substitutes this with the bot login auto-resolved at boot
+via `gh api user` (the same value used by `require_bot_match`). If
+the gh identity isn't resolvable, the placeholder is silently dropped
+— the trigger simply doesn't filter, which is the safer failure
+(better to run a duplicate session than to silently never fire).
 
-If you want to add explicit additional logins to `ignore_authors`
-(e.g. an account the bot impersonates for commits), set:
-
-```
-BOT_LOGINS=foo,bar
-```
-
-These are appended to every trigger's `ignore_authors`, additively.
-
-`BOT_LOGIN` (singular) is the legacy single-value form of `BOT_LOGINS`
-and behaves the same way (additive, not a substitute for the gh-
-resolved value).
-
-> **Note**: the `require_bot_match` identity gate always uses the
-> auto-resolved `gh api user` value. `BOT_LOGIN` and `BOT_LOGINS`
-> only affect `ignore_authors`. If your bot's commit-author identity
-> differs from its gh CLI auth identity (rare), use `BOT_LOGIN` to
-> add the commit-author identity to ignore_authors; the gh-resolved
-> identity is what GitHub webhook payloads carry, so that's what
-> gates "is this work for me?"
+There's no env-var override. The `gh api user` value is the single
+source of truth for the bot's identity; if that's wrong, the fix is
+to fix `GH_TOKEN`.
 
 ### Overriding the default config
 
@@ -217,7 +200,7 @@ Field reference:
 | `triggers[].agent` | ✓ | Agent name to invoke (built-in or from `agents/`). |
 | `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. Synthetic booleans available: `is_pr_comment`, `is_review_with_body`, `review_state`, `is_ci_failure`. |
 | `triggers[].cwd` | optional | Override the session's working directory. Falls back to `default_cwd`, then to OpenCode's project root. |
-| `triggers[].ignore_authors` | optional | List of GitHub logins to filter out (case-insensitive, exact match) on `payload.sender.login`. The literal string `"$BOT_LOGIN"` is substituted with the auto-resolved bot login at boot. Use this to stop the bot from triggering itself on triggers where the bot is expected to act on its own events (e.g. comment replies). |
+| `triggers[].ignore_authors` | optional | List of GitHub logins to filter out (case-insensitive, exact match) on `payload.sender.login`. The literal string `"$BOT_LOGIN"` is substituted with the auto-resolved bot login at boot. Use this on triggers where the bot would otherwise re-fire on its own webhook activity (e.g. comment replies). |
 | `triggers[].require_bot_match` | optional | List of dotted payload paths whose string value (case-insensitive) must equal the bot's resolved gh login for the trigger to fire. Paths support a `[*]` wildcard for arrays (`requested_reviewers[*].login`). OR semantics across paths. Empty/absent = no gate. Skips with `none of [paths] matched bot login 'X'` on miss, or `bot identity unresolved` if `gh api user` failed at boot (fail-closed). |
 | `triggers[].payload_filter` | optional | Object of dotted-path → expected-value gates. `"*"` matches any non-empty value; other values match scalars after JSON normalization. Multiple keys AND. Use to cheaply gate "fire only when payload.X = Y" without spinning up a session that BLOCKED-exits. |
 | `port` | optional | Listener port; defaults to `5050` or `WEBHOOK_PORT`. |
