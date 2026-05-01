@@ -284,6 +284,12 @@ function evaluatePayloadFilter(
 // (case-insensitive) equals the bot's login passes. If the bot login
 // is unresolved we fail closed — the trigger is skipped rather than
 // risk firing on something the operator wanted gated.
+//
+// Paths support a `[*]` wildcard for arrays: e.g.
+// `pull_request.requested_reviewers[*].login` matches if ANY element
+// of the requested_reviewers array has a login equal to the bot's.
+// This lets a single trigger gate on "bot is the PR author OR bot is
+// in the requested-reviewers list" by listing both paths.
 function evaluateBotMatch(
   paths: string[] | undefined,
   payload: unknown,
@@ -293,10 +299,64 @@ function evaluateBotMatch(
   if (!botLogin) return "bot identity unresolved"
   const lower = botLogin.toLowerCase()
   for (const path of paths) {
-    const v = lookup(payload, path)
-    if (typeof v === "string" && v.toLowerCase() === lower) return null
+    for (const v of lookupAll(payload, path)) {
+      if (typeof v === "string" && v.toLowerCase() === lower) return null
+    }
   }
   return `none of [${paths.join(", ")}] matched bot login '${botLogin}'`
+}
+
+// Like lookup() but yields every value reachable through the path,
+// expanding `[*]` segments across array elements. For paths without
+// `[*]`, yields a single value (or yields nothing if the path
+// doesn't resolve).
+function lookupAll(ctx: unknown, path: string): unknown[] {
+  // Split on `.` AND on `[*]` boundaries. Numeric `[N]` keeps existing
+  // behavior (single index). `[*]` becomes a special STAR token.
+  const STAR = Symbol("star")
+  const tokens: Array<string | typeof STAR> = []
+  for (const part of path.split(".")) {
+    let i = 0
+    while (i < part.length) {
+      const lb = part.indexOf("[", i)
+      if (lb < 0) {
+        if (i < part.length) tokens.push(part.slice(i))
+        break
+      }
+      if (lb > i) tokens.push(part.slice(i, lb))
+      const rb = part.indexOf("]", lb)
+      if (rb < 0) {
+        // Malformed — treat the rest as a literal segment.
+        tokens.push(part.slice(i))
+        break
+      }
+      const inside = part.slice(lb + 1, rb)
+      tokens.push(inside === "*" ? STAR : inside)
+      i = rb + 1
+    }
+  }
+
+  // Walk every token, branching on STAR.
+  let frontier: unknown[] = [ctx]
+  for (const tok of tokens) {
+    const next: unknown[] = []
+    for (const cur of frontier) {
+      if (tok === STAR) {
+        if (Array.isArray(cur)) {
+          for (const el of cur) next.push(el)
+        }
+        // Non-array under [*] yields nothing — drop this branch.
+      } else {
+        if (cur && typeof cur === "object" && tok in (cur as object)) {
+          next.push((cur as Record<string, unknown>)[tok])
+        }
+        // Missing key drops the branch.
+      }
+    }
+    frontier = next
+    if (frontier.length === 0) return []
+  }
+  return frontier
 }
 
 // Trigger as it lives in memory after normalization. action is always
@@ -310,17 +370,29 @@ type NormalizedTrigger = Omit<Trigger, "action" | "enabled"> & {
 function normalizeTrigger(
   t: Trigger,
   extraIgnoreAuthors: string[],
+  botLogin: string | null,
 ): NormalizedTrigger {
-  // Merge config-supplied ignore_authors with extras (typically the
-  // BOT_LOGIN env var). Dedup case-insensitively so explicit config +
-  // env-var-derived entries don't duplicate.
+  // Merge config-supplied ignore_authors with extras (e.g. BOT_LOGINS
+  // env-supplied). The "$BOT_LOGIN" placeholder anywhere in the
+  // config-supplied list is substituted with the resolved bot login;
+  // dropped silently if the bot identity isn't resolved (the trigger
+  // simply won't filter that case, which is what we want — better to
+  // run than to silently never fire).
+  //
+  // Auto-append happens ONLY through the "$BOT_LOGIN" placeholder, NOT
+  // implicitly. Triggers like pr-opened legitimately want to fire on
+  // the bot's own actions (self-review pass), so we don't blanket-add
+  // the bot login to every trigger's ignore_authors.
   const merged: string[] = []
   const seen = new Set<string>()
-  for (const a of [...(t.ignore_authors ?? []), ...extraIgnoreAuthors]) {
-    const k = a.toLowerCase()
+  const sources = [...(t.ignore_authors ?? []), ...extraIgnoreAuthors]
+  for (const raw of sources) {
+    const expanded = raw === "$BOT_LOGIN" ? botLogin : raw
+    if (!expanded) continue
+    const k = expanded.toLowerCase()
     if (seen.has(k)) continue
     seen.add(k)
-    merged.push(a)
+    merged.push(expanded)
   }
   return {
     ...t,
@@ -400,17 +472,21 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     )
   }
 
-  // BOT_LOGIN(S): self-loop guard sourced from the environment for
-  // explicit operator override. Defaults to the resolved bot identity
-  // above when unset, so the common case (one PAT, one user) needs
-  // zero manual config. Plural BOT_LOGINS accepts a comma-separated
-  // list for shops with multiple service accounts. Both are appended
-  // (deduped) to every trigger's ignore_authors.
+  // BOT_LOGIN / BOT_LOGINS: extra ignore_authors entries supplied via
+  // env vars. Both are appended (deduped) to every trigger's
+  // ignore_authors. These are useful when the bot operates under a
+  // different commit-author identity than the gh CLI's authenticated
+  // user (rare).
+  //
+  // The bot's own gh-resolved login is NOT appended here. Triggers
+  // that want to filter the bot itself can use the literal string
+  // "$BOT_LOGIN" in their config-supplied ignore_authors; the
+  // placeholder is substituted at trigger-load time. This is opt-in
+  // because some triggers (pr-opened, pr-ready-for-review) want to
+  // fire on the bot's OWN actions (self-review pass on the bot's PRs).
   const envIgnoreAuthors: string[] = []
   if (process.env.BOT_LOGIN) {
     envIgnoreAuthors.push(process.env.BOT_LOGIN.trim())
-  } else if (botLogin) {
-    envIgnoreAuthors.push(botLogin)
   }
   if (process.env.BOT_LOGINS) {
     for (const l of process.env.BOT_LOGINS.split(",")) {
@@ -420,7 +496,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   }
 
   const triggers = (cfg.triggers ?? []).map((t) =>
-    normalizeTrigger(t, envIgnoreAuthors),
+    normalizeTrigger(t, envIgnoreAuthors, botLogin),
   )
 
   // Bail quietly when nothing is configured. Loading the plugin without
