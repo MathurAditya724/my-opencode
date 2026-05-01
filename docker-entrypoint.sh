@@ -31,6 +31,19 @@ if [ ! -d "$DEV_DIR/.git" ]; then
   git -C "$DEV_DIR" config user.name  "Developer"
 fi
 
+# If GH_TOKEN is set, configure git's credential helper to defer to
+# `gh auth git-credential`. Without this, `git push` over HTTPS prompts
+# for a username and fails non-interactively, even though gh itself
+# (and the agents' `gh` calls) work fine via GH_TOKEN env-var
+# auto-detection. The helper resolves the token fresh on every git
+# operation — no on-disk token state, matches the env-var-driven
+# pattern that survives Railway redeploys.
+# Idempotent: gh detects existing helpers and only writes if absent.
+if [ -n "$GH_TOKEN" ]; then
+  gh auth setup-git 2>/dev/null \
+    || echo "WARN: gh auth setup-git failed; agents that run 'git push' over HTTPS may stall" >&2
+fi
+
 # Pin cwd to ~/dev — Railway can start the container from / regardless
 # of the Dockerfile's WORKDIR.
 cd "$DEV_DIR"
