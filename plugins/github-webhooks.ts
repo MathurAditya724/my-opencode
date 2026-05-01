@@ -56,6 +56,22 @@ type Trigger = {
   // as today (fire on event+action match only). Filter mismatches are
   // counted in the response's `skipped` array with a reason.
   payload_filter?: Record<string, unknown>
+  // Identity gate. List of dotted payload paths whose string value, if
+  // any matches the bot's resolved GitHub login (case-insensitive),
+  // permits dispatch. OR semantics — any path equal to the bot's
+  // login is enough to fire. Empty list / absent field means no gate
+  // (the trigger fires regardless of identity).
+  //
+  // Used to scope agents to "things the bot was summoned on": e.g.
+  // ["assignee.login"] for issue triggers means the bot only handles
+  // issues assigned TO it; ["pull_request.user.login"] means the bot
+  // only handles PRs it authored.
+  //
+  // If the bot's login can't be resolved at boot (gh api user failed)
+  // and a trigger has require_bot_match set, that trigger is skipped
+  // with reason "bot identity unresolved" — fail-closed for gated
+  // triggers, fail-open for un-gated ones.
+  require_bot_match?: string[]
 }
 
 type WebhookConfig = {
@@ -80,6 +96,47 @@ type WebhookConfig = {
   // Hard cap on persisted webhook deliveries. Default 1000.
   retention?: number
   triggers?: Trigger[]
+}
+
+// Resolve the bot's GitHub login by shelling out to `gh api user --jq
+// .login`. gh reads GH_TOKEN from the environment automatically; no
+// argument plumbing needed. The result is cached for the process
+// lifetime via the singleton call site (one resolveBotLogin() per
+// plugin init), and that's the right scope — token rotation requires
+// a container restart to propagate, which is fine for our use case.
+//
+// Returns null on any failure (no GH_TOKEN, network error, gh missing,
+// 5s timeout). Callers are expected to fall back to env-var-supplied
+// hints (BOT_LOGIN) and/or skip identity-gated work with a clear log.
+async function resolveBotLogin(): Promise<string | null> {
+  try {
+    const proc = Bun.spawn(["gh", "api", "user", "--jq", ".login"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    })
+    // 5s ceiling. gh's own request timeout is more lenient, but the
+    // plugin shouldn't sit in startup waiting for a slow network.
+    const timer = setTimeout(() => proc.kill("SIGTERM"), 5_000)
+    timer.unref?.()
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    clearTimeout(timer)
+    if (exitCode !== 0) {
+      console.warn(
+        `[github-webhooks] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`,
+      )
+      return null
+    }
+    const login = stdout.trim()
+    return login.length > 0 ? login : null
+  } catch (err) {
+    console.warn("[github-webhooks] resolveBotLogin failed:", err)
+    return null
+  }
 }
 
 // Resolves and reads the JSON config file. Default path is
@@ -222,6 +279,26 @@ function evaluatePayloadFilter(
   return null
 }
 
+// Identity gate. Returns null on match (= no reason to skip), or a
+// string reason on miss. OR across paths: any path whose string value
+// (case-insensitive) equals the bot's login passes. If the bot login
+// is unresolved we fail closed — the trigger is skipped rather than
+// risk firing on something the operator wanted gated.
+function evaluateBotMatch(
+  paths: string[] | undefined,
+  payload: unknown,
+  botLogin: string | null,
+): string | null {
+  if (!paths || paths.length === 0) return null
+  if (!botLogin) return "bot identity unresolved"
+  const lower = botLogin.toLowerCase()
+  for (const path of paths) {
+    const v = lookup(payload, path)
+    if (typeof v === "string" && v.toLowerCase() === lower) return null
+  }
+  return `none of [${paths.join(", ")}] matched bot login '${botLogin}'`
+}
+
 // Trigger as it lives in memory after normalization. action is always
 // `string | null` (config-supplied undefined/missing field becomes
 // null), enabled is always boolean.
@@ -306,14 +383,35 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   const dbPath =
     cfg.db_path ?? `${homedir()}/dev/.opencode/github-webhooks.sqlite`
 
-  // BOT_LOGIN(S): self-loop guard sourced from the environment instead
-  // of webhooks.json, so users don't have to edit the bundled file just
-  // to plug in their bot's identity. Singular BOT_LOGIN is the common
-  // case (one PAT, one user); plural BOT_LOGINS accepts a comma-
-  // separated list for shops with multiple service accounts. Both, if
-  // set, are appended (deduped) to every trigger's ignore_authors.
+  // Resolve the bot's identity once at boot. Cached for the lifetime
+  // of the plugin process; used for two things downstream:
+  //   1. As the default value for ignore_authors when BOT_LOGIN isn't
+  //      set explicitly (self-loop prevention).
+  //   2. As the comparison target for the require_bot_match identity
+  //      gate (scope agents to "things addressed to the bot").
+  // If resolution fails the plugin still boots, but identity-gated
+  // triggers will refuse to fire until a restart picks up a new token.
+  const botLogin = await resolveBotLogin()
+  if (botLogin) {
+    console.log(`[github-webhooks] bot identity: ${botLogin}`)
+  } else {
+    console.warn(
+      `[github-webhooks] WARNING: could not resolve bot identity via 'gh api user' — triggers with require_bot_match will be skipped. Set GH_TOKEN to enable identity-gated triggers.`,
+    )
+  }
+
+  // BOT_LOGIN(S): self-loop guard sourced from the environment for
+  // explicit operator override. Defaults to the resolved bot identity
+  // above when unset, so the common case (one PAT, one user) needs
+  // zero manual config. Plural BOT_LOGINS accepts a comma-separated
+  // list for shops with multiple service accounts. Both are appended
+  // (deduped) to every trigger's ignore_authors.
   const envIgnoreAuthors: string[] = []
-  if (process.env.BOT_LOGIN) envIgnoreAuthors.push(process.env.BOT_LOGIN.trim())
+  if (process.env.BOT_LOGIN) {
+    envIgnoreAuthors.push(process.env.BOT_LOGIN.trim())
+  } else if (botLogin) {
+    envIgnoreAuthors.push(botLogin)
+  }
   if (process.env.BOT_LOGINS) {
     for (const l of process.env.BOT_LOGINS.split(",")) {
       const trimmed = l.trim()
@@ -612,6 +710,22 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
             })
             continue
           }
+        }
+
+        // Identity gate. Scopes the trigger to deliveries where the
+        // bot's resolved login matches one of the configured payload
+        // paths (e.g. assignee.login for issues, pull_request.user.login
+        // for PRs). Fails closed when the bot login is unresolved so a
+        // misconfigured deployment doesn't accidentally act on
+        // arbitrary repos.
+        const botMatchReason = evaluateBotMatch(
+          t.require_bot_match,
+          payload,
+          botLogin,
+        )
+        if (botMatchReason) {
+          skipped.push({ name: t.name, reason: botMatchReason })
+          continue
         }
 
         // Payload-shape filter. Lets a trigger declare "fire only when
