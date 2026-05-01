@@ -40,11 +40,34 @@ GitHub  ──email──▶  gh@yourdomain.com
    - Cloudflare dashboard → your zone → **Email** → enable Email Routing.
    - Add a destination address (e.g. `gh@yourdomain.com`) and verify it via the email Cloudflare sends.
 
-2. **Edit config**.
-   - `wrangler.json` → `vars.WEBHOOK_URL` — public URL of your opencode-webhooks endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network.
-   - `wrangler.json` → `vars.FORWARD_TO` — destination address for the verbatim forward (e.g. `you@yourdomain.com`). **Must be verified in Cloudflare Email Routing first** (Email Routing → Destination addresses → Add). Leave unset (or remove the key) to skip forwarding entirely.
-   - `src/index.ts` → `ALLOWED_SENDERS` — TypeScript const at the top of the file. Exact strings are case-insensitive matches; strings of the form `/regex/` are treated as case-insensitive regex. Default allows `notifications@github.com` and any `*@github.com`. Compiles once at module load (zero per-request overhead). A malformed regex literal will throw at module init and the worker won't start — fix the literal and redeploy.
-   - `wrangler.json` → `observability.logs.enabled` — set to `true` (default in this repo) so you can `wrangler tail` and see structured logs in the Cloudflare dashboard.
+2. **Configure variables**.
+
+   Two variables are required at runtime:
+
+   | Var | Purpose |
+   |---|---|
+   | `WEBHOOK_URL` | Public URL of the opencode-webhooks plugin's email endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network. |
+   | `FORWARD_TO` | _(optional)_ Destination address for the verbatim forward (e.g. `you@yourdomain.com`). **Must be verified in Cloudflare Email Routing first** (Email Routing → Destination addresses → Add). Unset = no forwarding, webhook still fires. |
+
+   **For local dev (`wrangler dev`)**: copy `.env.example` to `.env` and edit. Wrangler v4 reads `.env` automatically and exposes the keys as worker bindings.
+
+   ```sh
+   cp .env.example .env
+   $EDITOR .env
+   ```
+
+   `.env` is gitignored at the repo root.
+
+   **For production**: set both variables in the Cloudflare dashboard:
+
+   - Workers & Pages → `opencode-email-worker` → **Settings** → **Variables and Secrets** → **Add** (type: Plaintext)
+   - Add `WEBHOOK_URL` and (optionally) `FORWARD_TO`.
+
+   Variables set in the dashboard are bound at runtime the same way the local `.env` values are. Code (`env.WEBHOOK_URL`, `env.FORWARD_TO`) is identical across environments.
+
+   The `ALLOWED_SENDERS` allowlist lives in `src/index.ts` as a top-level TypeScript const (PR-reviewed code, not config). Exact strings are case-insensitive matches; `/regex/` patterns are case-insensitive regex. Compiled once at module load. A malformed regex literal will throw at module init and the worker won't start — fix the literal and redeploy.
+
+   Logs are enabled in `wrangler.json` via `observability.logs.enabled` so you can `wrangler tail` and see structured output in the dashboard.
 
 3. **Set the shared HMAC secret**:
    ```sh
