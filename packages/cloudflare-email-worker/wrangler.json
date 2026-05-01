@@ -7,9 +7,5 @@
     "logs": {
       "enabled": true
     }
-  },
-  "vars": {
-    "WEBHOOK_URL": "https://your-opencode-host.example.com:5050/webhooks/email",
-    "FORWARD_TO": "you@yourdomain.com"
   }
 }
