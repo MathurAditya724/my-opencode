@@ -42,6 +42,7 @@ GitHub  ──email──▶  gh@yourdomain.com
    Paste a long random hex string (e.g. `openssl rand -hex 32`). Set the **same** value in your container's environment as `EMAIL_WEBHOOK_SECRET`.
 
 4. **Deploy**:
+   - Authenticate first: `wrangler login` (interactive) or set `CLOUDFLARE_API_TOKEN` in your environment.
    ```sh
    bun install
    bun run deploy

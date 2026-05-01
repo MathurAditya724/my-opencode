@@ -17,7 +17,7 @@ import {
   findMatching,
 } from "../matchers"
 import type { DeliveryStore } from "../storage"
-import { renderTemplate } from "../template"
+import { lookup, renderTemplate } from "../template"
 import type { NormalizedTrigger, SkippedDispatch } from "../types"
 import {
   type AllowlistPattern,
@@ -62,15 +62,23 @@ export function makeEmailFetchHandler(opts: {
     if (declaredLength > MAX_BODY_BYTES) {
       return Response.json({ error: "payload too large" }, { status: 413 })
     }
-    const rawBody = await req.text()
-    if (rawBody.length > MAX_BODY_BYTES) {
+    // Read body as raw bytes so HMAC matches what the worker signed.
+    // UTF-8-decoding via req.text() would replace 8-bit sequences and
+    // break signature verification on RFC822 messages with non-UTF-8
+    // content (rare for GitHub notifications but possible).
+    const rawBytes = new Uint8Array(await req.arrayBuffer())
+    if (rawBytes.byteLength > MAX_BODY_BYTES) {
       return Response.json({ error: "payload too large" }, { status: 413 })
     }
 
     const signature = req.headers.get("x-email-signature-256")
-    if (!verifySha256Signature(rawBody, signature, emailSecret)) {
+    if (!verifySha256Signature(rawBytes, signature, emailSecret)) {
       return Response.json({ error: "invalid signature" }, { status: 401 })
     }
+    // Headers are 7-bit ASCII per RFC 5322; parseHeaders only scans up
+    // to the first blank line, so a UTF-8 decode of the full body is
+    // safe to feed in.
+    const rawBody = new TextDecoder("utf-8").decode(rawBytes)
 
     const envelopeFrom = req.headers.get("x-email-from") ?? ""
     const envelopeTo = req.headers.get("x-email-to") ?? ""
@@ -128,10 +136,27 @@ export function makeEmailFetchHandler(opts: {
 
     const reason = (headers.get("x-github-reason") ?? "subscribed").toLowerCase()
     const event = `email.${reason}`
+    const dedupKey = `email:${messageId}`
+
+    // Synthesize BEFORE dedup: if `gh api` fails (network blip, rate
+    // limit), we need Cloudflare to retry. Inserting the dedup row
+    // first would both swallow the retry AND return 200, losing the
+    // email permanently.
+    const synth = await synthesizePayload(identity, headers, {
+      from: envelopeFrom,
+      to: envelopeTo,
+      reason,
+    })
+    if (!synth.ok) {
+      return Response.json({
+        ok: true,
+        message_id: messageId,
+        dropped: synth.error,
+      })
+    }
 
     // Idempotency: dedup by Message-ID, namespaced so it can never
     // collide with GitHub's UUID delivery_ids.
-    const dedupKey = `email:${messageId}`
     const inserted = store.insert(dedupKey, event, null)
     if (inserted) store.trim(retention)
     if (!inserted) {
@@ -143,22 +168,24 @@ export function makeEmailFetchHandler(opts: {
       })
     }
 
-    const synth = await synthesizePayload(identity, headers, {
-      from: envelopeFrom,
-      to: envelopeTo,
-    })
-    if (!synth.ok) {
-      return Response.json({
-        ok: true,
-        message_id: messageId,
-        dropped: synth.error,
-      })
-    }
+    // API-fetched login is the trustworthy source for self-loop
+    // suppression; X-GitHub-Sender header is only the fallback.
+    const apiSender = lookup(synth.payload, "comment.user.login")
+    const apiReviewSender = lookup(synth.payload, "review.user.login")
+    const senderForIgnore =
+      (typeof apiSender === "string" ? apiSender : null) ??
+      (typeof apiReviewSender === "string" ? apiReviewSender : null) ??
+      ghSender
+
+    const reviewState = lookup(synth.payload, "review.state")
+    const review_state =
+      typeof reviewState === "string" ? reviewState.toLowerCase() : null
+
     const matches = findMatching(emailTriggers, event, null)
     const dispatched: string[] = []
     const skipped: SkippedDispatch[] = []
     for (const t of matches) {
-      const senderReason = evaluateIgnoreAuthors(t.ignore_authors, ghSender)
+      const senderReason = evaluateIgnoreAuthors(t.ignore_authors, senderForIgnore)
       if (senderReason) {
         skipped.push({ name: t.name, reason: senderReason })
         continue
@@ -183,6 +210,7 @@ export function makeEmailFetchHandler(opts: {
         action: null,
         delivery_id: dedupKey,
         payload: synth.payload,
+        review_state,
       })
       void dispatch(t, prompt, dedupKey)
       dispatched.push(t.name)

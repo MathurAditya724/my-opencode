@@ -42,34 +42,50 @@ const PULL_RE =
   /^<?([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(c|r|review\/?)(\d+))?@github\.com>?$/i
 
 export function identifyEmail(headers: EmailHeaders): EmailIdentity {
-  const messageId = headers.get("message-id") ?? ""
-
-  const issue = ISSUE_RE.exec(messageId)
-  if (issue) {
-    const [, owner, repo, n, commentId] = issue
-    return {
-      kind: "issue",
-      owner,
-      repo,
-      number: Number(n),
-      comment_id: commentId ? Number(commentId) : undefined,
+  // Candidates in priority order: Message-ID, In-Reply-To, then each
+  // token of References. GitHub's per-event Message-ID often doesn't
+  // match our regexes but In-Reply-To/References point at the canonical
+  // <owner/repo/issues/N@github.com> parent.
+  const candidates: string[] = []
+  const messageId = headers.get("message-id")
+  if (messageId) candidates.push(messageId)
+  const inReplyTo = headers.get("in-reply-to")
+  if (inReplyTo) candidates.push(inReplyTo)
+  const references = headers.get("references")
+  if (references) {
+    for (const tok of references.split(/\s+/)) {
+      if (tok.length > 0) candidates.push(tok)
     }
   }
 
-  const pull = PULL_RE.exec(messageId)
-  if (pull) {
-    const [, owner, repo, n, marker, commentId] = pull
-    let comment_kind: "issue" | "review" | "review_comment" | undefined
-    if (marker === "c") comment_kind = "issue"
-    else if (marker === "r") comment_kind = "review_comment"
-    else if (marker?.startsWith("review")) comment_kind = "review"
-    return {
-      kind: "pull",
-      owner,
-      repo,
-      number: Number(n),
-      comment_id: commentId ? Number(commentId) : undefined,
-      comment_kind,
+  for (const candidate of candidates) {
+    const issue = ISSUE_RE.exec(candidate)
+    if (issue) {
+      const [, owner, repo, n, commentId] = issue
+      return {
+        kind: "issue",
+        owner,
+        repo,
+        number: Number(n),
+        comment_id: commentId ? Number(commentId) : undefined,
+      }
+    }
+
+    const pull = PULL_RE.exec(candidate)
+    if (pull) {
+      const [, owner, repo, n, marker, commentId] = pull
+      let comment_kind: "issue" | "review" | "review_comment" | undefined
+      if (marker === "c") comment_kind = "issue"
+      else if (marker === "r") comment_kind = "review_comment"
+      else if (marker?.startsWith("review")) comment_kind = "review"
+      return {
+        kind: "pull",
+        owner,
+        repo,
+        number: Number(n),
+        comment_id: commentId ? Number(commentId) : undefined,
+        comment_kind,
+      }
     }
   }
 

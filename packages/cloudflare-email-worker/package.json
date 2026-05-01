@@ -6,7 +6,6 @@
   "description": "Cloudflare Email Worker that forwards GitHub notification emails to the opencode-webhooks plugin's /webhooks/email endpoint.",
   "scripts": {
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
     "tail": "wrangler tail",
     "typecheck": "tsc --noEmit"
   },

@@ -34,13 +34,13 @@ export type SynthesisResult =
 export async function synthesizePayload(
   identity: EmailIdentity,
   headers: EmailHeaders,
-  envelope: { from: string; to: string },
+  envelope: { from: string; to: string; reason: string },
 ): Promise<SynthesisResult> {
   if (identity.kind === "unknown") {
     return { ok: false, error: "unknown-message-id" }
   }
 
-  const reason = (headers.get("x-github-reason") ?? "subscribed").toLowerCase()
+  const reason = envelope.reason
   const sender = headers.get("x-github-sender") ?? null
   const messageId = headers.get("message-id") ?? ""
   const listId = headers.get("list-id") ?? ""
