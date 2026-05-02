@@ -17,7 +17,8 @@
       "source": "email",
       "event": ["email.assign"],
       "agent": "github-issue-resolver",
-      "prompt_template": "A GitHub issue has just been assigned to you (notification arrived via email). Resolve it end-to-end following your standard workflow.\n\nRepo: {{ payload.repository.full_name }}\nIssue: #{{ payload.issue.number }} — {{ payload.issue.title }}\nAssignee: {{ payload.assignee.login }}\nAuthor: {{ payload.issue.user.login }}\nURL: {{ payload.issue.html_url }}\n\nIssue body:\n---\n{{ payload.issue.body }}\n---\n\nLabels: {{ payload.issue.labels }}\n\nClone (or update) the repo under ~/dev/<owner>/<repo>, branch off the default branch, plan first, implement the smallest change that resolves the issue, push, and open a PR with `Closes #{{ payload.issue.number }}` in the body. If the change is larger than ~5 files or touches public APIs, post a comment on the issue and emit BLOCKED instead of opening a PR."
+      "require_bot_match": ["issue.assignee.login", "issue.assignees[*].login"],
+      "prompt_template": "A GitHub issue has just been assigned to you (notification arrived via email). Resolve it end-to-end following your standard workflow.\n\nRepo: {{ payload.repository.full_name }}\nIssue: #{{ payload.issue.number }} — {{ payload.issue.title }}\nAssignees: {{ payload.issue.assignees[*].login }}\nAuthor: {{ payload.issue.user.login }}\nURL: {{ payload.issue.html_url }}\n\nIssue body:\n---\n{{ payload.issue.body }}\n---\n\nLabels: {{ payload.issue.labels }}\n\nClone (or update) the repo under ~/dev/<owner>/<repo>, branch off the default branch, plan first, implement the smallest change that resolves the issue, push, and open a PR with `Closes #{{ payload.issue.number }}` in the body. If the change is larger than ~5 files or touches public APIs, post a comment on the issue and emit BLOCKED instead of opening a PR."
     },
     {
       "name": "pr-opened",
