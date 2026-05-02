@@ -1,7 +1,5 @@
 // Shared HTTP helpers for the github + email handlers.
 
-import { lookupString } from "./template"
-
 // Shared upper-bound sized for GitHub's 25 MB webhook payload cap.
 // The email path uses a tighter cap (see MAX_EMAIL_BODY_BYTES) since
 // the worker now POSTs a small JSON event, not a raw RFC822 message.
@@ -38,15 +36,4 @@ export async function readBodyBytes(
     }
   }
   return { ok: true, bytes }
-}
-
-// Values surfaced into prompt templates that the path-only renderer
-// can't compute (lowercased values, etc.). Presence/non-empty checks
-// are handled by `payload_filter: { path: "*" }` on the trigger
-// instead. Shared between github and email handlers so a new synthetic
-// lands in one place for both.
-export function computeSynthetics(payload: unknown): Record<string, unknown> {
-  return {
-    review_state: lookupString(payload, "review.state")?.toLowerCase() ?? null,
-  }
 }

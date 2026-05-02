@@ -92,11 +92,11 @@ GitHub  ──email──▶  gh@yourdomain.com
 7. **Add an email trigger to `webhooks.json`** in the container, e.g.:
    ```json
    {
-     "name": "email-mention",
+     "name": "email-event",
      "source": "email",
-     "event": "email.mention",
-     "agent": "pr-comment-responder",
-     "prompt_template": "Mention via email on {{ payload.repository.full_name }}#{{ payload.issue.number }}{{ payload.pull_request.number }} — triage and respond."
+     "event": ["email.*"],
+     "agent": "github-agent",
+     "prompt_template": "A GitHub notification arrived via email.\n\nEvent: {{ event }}\nAction: {{ action }}\nDelivery: {{ delivery_id }}\n\nPayload:\n{{ payload }}"
    }
    ```
 

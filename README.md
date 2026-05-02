@@ -9,18 +9,22 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`opencode-webhooks`](./packages/opencode-webhooks)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (8 triggers covering the full PR lifecycle). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/opencode-webhooks/`](./packages/opencode-webhooks) — see its [README](./packages/opencode-webhooks/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
-- **Bundled agents** (permissions pre-broadened so they don't stall on approval prompts):
-  - [`github-issue-resolver`](./agents/github-issue-resolver.md) — issue assigned → branch → plan → implement → draft PR.
-  - [`pr-reviewer`](./agents/pr-reviewer.md) — PR opened / ready-for-review / review-requested / assigned → runs the `review` skill to find issues. On the bot's own PRs it spawns the `pr-fix-applier` subagent to push fixes directly. On others' PRs it posts a structured GitHub review.
-  - [`pr-fix-applier`](./agents/pr-fix-applier.md) — subagent invoked by `pr-reviewer`. Takes a list of findings, implements each, runs deslop + tests, pushes a single commit. Doesn't touch GitHub UI.
-  - [`ci-fixer`](./agents/ci-fixer.md) — `check_suite.completed` with `conclusion: failure` → diagnoses the failure → pushes the smallest fix → comments on the PR. Capped at 3 attempts per PR.
-  - [`pr-comment-responder`](./agents/pr-comment-responder.md) — review comment / PR comment / review submitted → triages → fixes if actionable, replies in either case.
-- **Bundled skills** (loadable on demand by any agent via the `skill` tool):
-  - [`pr`](./skills/pr/SKILL.md) — open a draft PR with the implementation plan attached as a git note.
-  - [`review`](./skills/review/SKILL.md) — diff against default branch and emit a structured `findings` list (kind / file / line / summary / suggested_fix).
-  - [`deslop`](./skills/deslop/SKILL.md) — strip AI-generated noise from the diff before commit.
-  - All three are adapted from [BYK/dotskills](https://github.com/BYK/dotskills) (Apache-2.0).
+- **Bundled OpenCode plugin: [`opencode-webhooks`](./packages/opencode-webhooks)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (3 triggers covering all GitHub events and email notifications). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/opencode-webhooks/`](./packages/opencode-webhooks) — see its [README](./packages/opencode-webhooks/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
+- **Bundled agent** (permissions pre-broadened so it doesn't stall on approval prompts):
+  - [`github-agent`](./agents/github-agent.md) — unified agent that receives raw webhook payloads, triages the event, and loads situation-specific skills to drive it to completion. Handles the full lifecycle: issue assignment → draft PR → review → CI fix → comment response.
+- **Bundled skills** (loadable on demand by the agent via the `skill` tool):
+  - **Situation skills** (domain workflows the agent loads based on the event type):
+    - [`repo-setup`](./skills/repo-setup/SKILL.md) — shared clone/checkout/branch boilerplate.
+    - [`resolve-issue`](./skills/resolve-issue/SKILL.md) — plan, implement, clean up, open a draft PR.
+    - [`review-pr`](./skills/review-pr/SKILL.md) — review a PR; self-fix or post a structured review.
+    - [`fix-ci`](./skills/fix-ci/SKILL.md) — diagnose and fix failing CI (3-attempt budget).
+    - [`respond-to-comment`](./skills/respond-to-comment/SKILL.md) — triage PR comments and respond.
+    - [`apply-fixes`](./skills/apply-fixes/SKILL.md) — apply review findings as smallest code changes.
+  - **Utility skills** (cross-cutting tools used by situation skills):
+    - [`pr`](./skills/pr/SKILL.md) — open a draft PR with the implementation plan embedded.
+    - [`review`](./skills/review/SKILL.md) — diff against default branch and emit a structured `findings` list.
+    - [`deslop`](./skills/deslop/SKILL.md) — strip AI-generated noise from the diff before commit.
+  - Utility skills adapted from [BYK/dotskills](https://github.com/BYK/dotskills) (Apache-2.0).
 - Non-root `developer` user. OpenCode starts in `~/dev`. Mount a single persistent volume at `~/dev` (= `/home/developer/dev`) to keep your projects **and** OpenCode session/auth data across redeploys — `~/.local/share/opencode` is symlinked into `~/dev/.opencode`.
 
 ## Deploy on Railway
@@ -52,7 +56,7 @@ See [`.env.example`](./.env.example) for the full template.
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
-| `GH_TOKEN` | For the bundled `gh` CLI **and** the `opencode-webhooks` plugin's identity-gated triggers. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin runs `gh api user --jq .login` at boot to resolve the bot's GitHub identity; without `GH_TOKEN`, identity-gated triggers fail closed. |
+| `GH_TOKEN` | For the bundled `gh` CLI and the `opencode-webhooks` plugin's bot identity resolution. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin resolves the bot's login at boot for self-loop prevention (`$BOT_LOGIN` substitution); without `GH_TOKEN`, self-loop prevention is degraded. |
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `opencode-webhooks` plugin. Required to receive webhooks. |
 | `WEBHOOK_PORT`, `WEBHOOKS_CONFIG` | Optional plugin tuning. See [`.env.example`](./.env.example). |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
@@ -68,59 +72,44 @@ deliveries into agent sessions via the in-process SDK client.
 ### Default behavior
 
 The image ships with [`webhooks.json`](./webhooks.json) baked in at
-`~/.config/opencode/webhooks.json`. It defines **8 triggers** that
-together cover an issue's full lifecycle through merge:
+`~/.config/opencode/webhooks.json`. It defines **3 triggers**
+that route all supported GitHub events to the unified `github-agent`:
 
-| Trigger | GitHub event (`event.action`) | Identity gate (`require_bot_match`) | Payload gate (`payload_filter`) | Agent |
-|---|---|---|---|---|
-| `issue-assigned` | `issues.assigned` | `assignee.login` | — | `github-issue-resolver` |
-| `pr-opened` | `pull_request.opened` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | — | `pr-reviewer` |
-| `pr-ready-for-review` | `pull_request.ready_for_review` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | — | `pr-reviewer` |
-| `pr-review-requested` | `pull_request.review_requested` | `requested_reviewer.login` OR `pull_request.requested_reviewers[*].login` | — | `pr-reviewer` |
-| `pr-assigned` | `pull_request.assigned` | `assignee.login` OR `pull_request.assignees[*].login` | — | `pr-reviewer` |
-| `ci-failed` | `check_suite.completed` | (agent-side, see note) | `check_suite.conclusion = "failure"` AND `check_suite.pull_requests` non-empty | `ci-fixer` |
-| `pr-review-comment` | `pull_request_review_comment.created` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | — | `pr-comment-responder` |
-| `pr-issue-comment` | `issue_comment.created` | `issue.user.login` OR `issue.assignees[*].login` | `issue.pull_request` exists | `pr-comment-responder` |
-| `pr-review-submitted` | `pull_request_review.submitted` | `pull_request.user.login` OR `pull_request.requested_reviewers[*].login` OR `pull_request.assignees[*].login` | `review.body` non-empty | `pr-comment-responder` |
+| Trigger | Events | Self-loop guard | Agent |
+|---|---|---|---|
+| `github-event` | `issues`, `pull_request`, `check_suite` | none (bot's own actions should fire) | `github-agent` |
+| `github-comment` | `pull_request_review_comment`, `issue_comment`, `pull_request_review` | `ignore_authors: [$BOT_LOGIN]` | `github-agent` |
+| `email-event` | `email.*` (any email notification) | `ignore_authors: [$BOT_LOGIN]` | `github-agent` |
 
-**`require_bot_match`** scopes each agent to work that's *addressed
-to the bot*: only fire when the configured payload field equals the
-bot's resolved GitHub login (case-insensitive, OR across multiple
-paths). The bot's identity is auto-resolved at boot via `gh api user
---jq .login`. Paths support a `[*]` wildcard for arrays — e.g.
-`pull_request.requested_reviewers[*].login` matches if any element of
-the array's `.login` equals the bot. Concretely:
+The agent receives the **raw webhook payload** and decides what to do.
+It triages the event and spawns sub-agents (via the `task` tool) for
+the actual work:
 
-- `github-issue-resolver` only fires on issues assigned to the bot.
-- `pr-reviewer` fires on PRs the bot is involved in: **authored**
-  (self-review pass), **added as a requested reviewer**, or
-  **assigned**. GitHub treats "Assignees" and "Reviewers" as
-  semantically distinct (sidebar sections), but for this bot they're
-  equivalent — both mean "look at this PR." The dedicated
-  `pr-assigned` trigger fires when the bot is added via the
-  Assignees sidebar after the PR is already open.
-- `pr-comment-responder` fires on comments / reviews on PRs the bot
-  is involved in (author, requested reviewer, or assignee).
-  Top-level PR comments via `pr-issue-comment` use `issue.user.login
-  OR issue.assignees[*].login` because the `issue_comment` payload
-  doesn't carry a requested-reviewers array.
-- `ci-fixer` is the exception: `check_suite` payloads don't include
-  the PR author, so the agent does the `gh pr view --json author`
-  check itself as step 0 and `BLOCKED`s out if the PR isn't its.
+- **Issue assigned** → sub-agent loads `repo-setup` + `resolve-issue` → draft PR
+- **PR needs review** → sub-agent loads `repo-setup` + `review-pr` → review or self-fix
+- **CI failed** → sub-agent loads `repo-setup` + `fix-ci` → smallest fix + comment
+- **Comment/review on PR** → sub-agent loads `repo-setup` + `respond-to-comment` → triage + reply/fix
 
-If `gh api user` fails at boot (no `GH_TOKEN`, network error), all
-identity-gated triggers skip with reason `bot identity unresolved` —
-fail-closed for safety.
+### Session affinity
 
-**`payload_filter`** is a separate, generic shape gate. When set,
-the plugin skips dispatch when the filter doesn't match — no agent
-session is created, no LLM tokens spent.
+The plugin extracts an **entity key** (`owner/repo#N`) from each
+webhook payload and routes all events for the same entity to the same
+OpenCode session. This means:
 
-Skipped triggers (from any gate) surface in the response's `skipped`
-array with a per-key reason (e.g. `none of [assignee.login] matched
-bot login 'foo'` or `payload.check_suite.conclusion = "success"
-(expected "failure")`), so you can see at a glance which triggers
-passed/skipped on each delivery.
+- When the bot resolves an issue and opens a PR, the subsequent CI
+  failure webhook arrives as a follow-up message in the same session —
+  the agent already has full context about the implementation.
+- Review comments on a PR arrive in the session that's already working
+  on that PR, so the agent can act on them immediately.
+- If the session is busy (processing a previous prompt), incoming
+  events queue in an in-memory buffer and are flushed as a single
+  batched follow-up when the current prompt completes.
+
+Events without a recognizable entity key fall through to one-shot
+sessions (fire-and-forget, same as before).
+
+The `batch_window_ms` config option (default 5s) controls how long
+the pipeline waits for additional events before flushing the queue.
 
 Once `GITHUB_WEBHOOK_SECRET` is set and `GH_TOKEN` is available
 (both required), the plugin boots its listener on port 5050
@@ -128,36 +117,24 @@ automatically. No further setup needed.
 
 ### Stopping the bot from triggering itself
 
-Most triggers in the bundled `webhooks.json` don't filter the bot's
-own actions — they're meant to fire on them. When the bot opens a PR,
-`pr-opened` should fire so the bot can self-review; when the bot is
-added as a requested reviewer, `pr-review-requested` should fire;
-when the bot is added as an assignee, `pr-assigned` should fire.
-Filtering the bot here would defeat the agents' core purpose.
+Self-loop prevention works at two levels:
 
-The exception is the comment-related triggers:
+1. **Plugin level** — the comment and email triggers use `ignore_authors: ["$BOT_LOGIN"]`.
+   The plugin substitutes `$BOT_LOGIN` with the bot login auto-resolved
+   at boot via `gh api user`. This prevents the bot's own webhook
+   activity (e.g., opening a PR, posting a comment) from re-triggering
+   a new session.
 
-- `pr-review-comment`
-- `pr-issue-comment`
-- `pr-review-submitted`
+2. **Agent level** — the `github-agent` runs a self-loop guard as a
+   pre-flight check: if `payload.sender.login` equals the bot's
+   identity, it stops with `SKIPPED: self-triggered`. The exception is
+   `check_suite.completed` where the sender is the CI app, not the
+   pusher.
 
-These need to filter the bot's own activity, otherwise the bot would
-respond to its own replies and loop forever. They use a special
-`"$BOT_LOGIN"` placeholder in `ignore_authors`:
-
-```json
-"ignore_authors": ["$BOT_LOGIN"]
-```
-
-The plugin substitutes this with the bot login auto-resolved at boot
-via `gh api user` (the same value used by `require_bot_match`). If
-the gh identity isn't resolvable, the placeholder is silently dropped
-— the trigger simply doesn't filter, which is the safer failure
-(better to run a duplicate session than to silently never fire).
-
-There's no env-var override. The `gh api user` value is the single
-source of truth for the bot's identity; if that's wrong, the fix is
-to fix `GH_TOKEN`.
+If `gh api user` fails at boot (no `GH_TOKEN`, network error), the
+`$BOT_LOGIN` placeholder is silently dropped — the trigger doesn't
+filter, which is the safer failure mode. The agent's own pre-flight
+check provides a second layer of defense.
 
 ### Overriding the default config
 
@@ -181,34 +158,30 @@ The minimum-viable trigger:
 {
   "triggers": [
     {
-      "name": "issue-assigned",
-      "event": "issues",
-      "action": "assigned",
-      "agent": "github-issue-resolver",
-      "prompt_template": "Resolve issue #{{ payload.issue.number }} in {{ payload.repository.full_name }}."
+      "name": "all-events",
+      "event": ["issues", "pull_request"],
+      "agent": "github-agent",
+      "prompt_template": "A GitHub webhook arrived.\n\nEvent: {{ event }}\nAction: {{ action }}\n\nPayload:\n{{ payload }}"
     }
   ]
 }
 ```
 
-The bundled [`webhooks.json`](./webhooks.json) is richer — its
-`prompt_template` interpolates the issue title, body, assignee, author,
-URL, and labels into a context-heavy prompt for the agent. Use that as
-the working reference when writing your own trigger.
+The bundled [`webhooks.json`](./webhooks.json) passes the raw payload
+to the agent, which decides what to do. The plugin's job is kept
+minimal: HMAC verification, dedup, self-loop guard, and dispatch.
 
 Field reference:
 
 | Field | Required | What it does |
 |---|---|---|
 | `triggers[].name` | ✓ | Unique identifier; surfaces in plugin logs. |
-| `triggers[].event` | ✓ | GitHub event header (`issues`, `pull_request`, `push`, ...). Use `"*"` to match anything. |
+| `triggers[].event` | ✓ | GitHub event header (`issues`, `pull_request`, `push`, ...). Use `"*"` to match anything. Accepts an array for OR-matching. Supports trailing wildcards (`"email.*"`). |
 | `triggers[].action` | optional | If set, must match the payload's `action` exactly. Omit/`null` to match any action of this event. |
 | `triggers[].agent` | ✓ | Agent name to invoke (built-in or from `agents/`). |
-| `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. Synthetic value available: `review_state` (lowercased `payload.review.state`). For presence/non-empty gating, use `payload_filter` with `"*"` instead of a synthetic. |
+| `triggers[].prompt_template` | ✓ | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths in the payload; missing paths render empty. |
 | `triggers[].cwd` | optional | Override the session's working directory. Falls back to `default_cwd`, then to OpenCode's project root. |
-| `triggers[].ignore_authors` | optional | List of GitHub logins to filter out (case-insensitive, exact match) on `payload.sender.login`. The literal string `"$BOT_LOGIN"` is substituted with the auto-resolved bot login at boot. Use this on triggers where the bot would otherwise re-fire on its own webhook activity (e.g. comment replies). |
-| `triggers[].require_bot_match` | optional | List of dotted payload paths whose string value (case-insensitive) must equal the bot's resolved gh login for the trigger to fire. Paths support a `[*]` wildcard for arrays (`requested_reviewers[*].login`). OR semantics across paths. Empty/absent = no gate. Skips with `none of [paths] matched bot login 'X'` on miss, or `bot identity unresolved` if `gh api user` failed at boot (fail-closed). |
-| `triggers[].payload_filter` | optional | Object of dotted-path → expected-value gates. `"*"` matches any non-empty value; other values match scalars after JSON normalization. Multiple keys AND. Use to cheaply gate "fire only when payload.X = Y" without spinning up a session that BLOCKED-exits. |
+| `triggers[].ignore_authors` | optional | List of GitHub logins to filter out (case-insensitive, exact match) on `payload.sender.login`. The literal string `"$BOT_LOGIN"` is substituted with the auto-resolved bot login at boot. Use this to prevent the bot from re-triggering on its own webhook activity. |
 | `port` | optional | Listener port; defaults to `5050` or `WEBHOOK_PORT`. |
 | `secret` | optional | HMAC secret. Falls back to `GITHUB_WEBHOOK_SECRET`. |
 | `max_concurrent` | optional | Cap on concurrent agent sessions across all triggers (default 2). |

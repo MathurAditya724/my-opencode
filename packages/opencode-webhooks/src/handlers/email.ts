@@ -18,7 +18,7 @@ import {
 import { type EmailEvent, identifyEmail } from "../email/identity"
 import { synthesizePayload } from "../email/synthesize"
 import { verifySha256Signature } from "../hmac"
-import { MAX_EMAIL_BODY_BYTES, computeSynthetics, readBodyBytes } from "../http"
+import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
 import { lookupString } from "../template"
 
@@ -28,7 +28,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   const triggers = c.get("emailTriggers")
   const store = c.get("store")
   const retention = c.get("retention")
-  const dispatch = c.get("dispatch")
+  const pipeline = c.get("pipeline")
   const botLogin = c.get("botLogin")
 
   if (!emailSecret) {
@@ -99,7 +99,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   const dedupKey = `email:${event.message_id}`
 
   // Synthesize BEFORE dedup — gh api fetch is idempotent, and we
-  // need the payload to evaluate payload_filter on the triggers.
+  // need the payload for prompt template rendering.
   const synth = await synthesizePayload(identity, event, reason)
   if (!synth.ok) {
     return c.json({
@@ -127,7 +127,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     lookupString(synth.payload, "review.user.login") ??
     ghSender
 
-  const synthetics = computeSynthetics(synth.payload)
   const { dispatched, skipped } = evaluateAndDispatch({
     triggers,
     event: triggerEvent,
@@ -141,9 +140,8 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       action: null,
       delivery_id: deliveryId,
       payload: synth.payload,
-      ...synthetics,
     },
-    dispatch,
+    pipeline,
     store,
   })
 

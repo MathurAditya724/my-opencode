@@ -176,17 +176,19 @@ COPY --chown=developer:developer \
      opencode-user-config.json \
      /home/developer/.config/opencode/opencode.json
 
-# Bundled agents (e.g. github-issue-resolver). Copied into the user-level
-# agents dir so they're discoverable from any session, including ones the
-# webhook plugin spawns programmatically.
+# Bundled agent (github-agent). Single unified agent that triages
+# webhook events and loads situation-specific skills on demand.
 COPY --chown=developer:developer agents \
      /home/developer/.config/opencode/agents
 
-# Bundled skills (pr, review, deslop). Each skill lives at
+# Bundled skills. Each skill lives at
 # ~/.config/opencode/skills/<name>/SKILL.md and is auto-discovered by
-# OpenCode's skill tool. The github-issue-resolver agent loads these
-# on demand at the relevant workflow step. Adapted from
-# https://github.com/BYK/dotskills (Apache-2.0).
+# OpenCode's skill tool. The github-agent loads these on demand:
+#   - repo-setup: shared clone/checkout boilerplate
+#   - resolve-issue, review-pr, fix-ci, respond-to-comment, apply-fixes:
+#     situation-specific workflows
+#   - deslop, review, pr: cross-cutting utilities
+# Adapted from https://github.com/BYK/dotskills (Apache-2.0).
 COPY --chown=developer:developer skills \
      /home/developer/.config/opencode/skills
 
@@ -212,10 +214,10 @@ RUN cd /home/developer/.config/opencode \
  && bun install --frozen-lockfile --production \
  && rm -rf ~/.bun/install/cache
 
-# Default config for the opencode-webhooks plugin: one trigger that wires
-# the `issues.assigned` event to the bundled `github-issue-resolver`
-# agent. The plugin reads this on startup; without it, the listener
-# stays off (no surprise port). Override per-deploy by setting
+# Default config for the opencode-webhooks plugin: 3 broad triggers
+# routing all GitHub events and email notifications to the unified
+# github-agent. The plugin reads this on startup; without it, the
+# listener stays off (no surprise port). Override per-deploy by setting
 # WEBHOOKS_CONFIG to a path on your persistent volume (e.g.
 # ~/dev/.opencode/webhooks.json) and putting your own file there. The
 # HMAC secret is intentionally NOT in this file — set
