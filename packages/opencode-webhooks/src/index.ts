@@ -34,7 +34,6 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   if (sentryDsn) {
     Sentry.init({
       dsn: sentryDsn,
-      tracesSampleRate: 1.0,
     })
     console.log("[opencode-webhooks] Sentry initialized")
   }
@@ -60,6 +59,8 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
   const defaultCwd = cfg.default_cwd ?? ctx.directory
   const retention = cfg.retention ?? 1000
+  // Default DB path follows the XDG data spec; override db_path in
+  // webhooks.json to point at a persistent location.
   const xdgDataHome = process.env.XDG_DATA_HOME || `${homedir()}/.local/share`
   const dbPath = cfg.db_path ?? `${xdgDataHome}/opencode-webhooks/deliveries.sqlite`
 

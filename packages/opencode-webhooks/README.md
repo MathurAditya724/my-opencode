@@ -9,7 +9,7 @@ Two ingest sources are supported:
 - **`source: "github_webhook"`** (default) — classic GitHub webhook deliveries to `POST /webhooks/github`. Standard event/action matching against `X-GitHub-Event`.
 - **`source: "email"`** — GitHub notification emails relayed by a Cloudflare Email Worker. The worker forwards a small JSON event (the headers we care about — `from`, `to`, `subject`, `message_id`, `in_reply_to`, `references`, `list_id`, `x_github_reason`, `x_github_sender`) to `POST /webhooks/email`. The plugin identifies the referenced issue/PR from `message_id`/`in_reply_to`/`references`, fetches canonical state from the GitHub API via `gh`, and dispatches the synthesized payload — same shape an actual webhook would produce, so existing agents work unchanged.
 
-> **Runtime: Bun ≥ 1.2.** Uses `Bun.serve`, `Bun.spawn`, and `bun:sqlite`.
+> **Runtime: Bun ≥ 1.2.** Uses `Bun.serve`, `Bun.spawn`, and `bun:sqlite`. Hono for HTTP routing; optional `@sentry/bun` for error tracking.
 
 ## Install
 
@@ -110,6 +110,7 @@ If `gh` isn't installed or `GH_TOKEN` isn't set, identity-gated triggers refuse 
 | `GH_TOKEN` | GitHub PAT, read by `gh` CLI for `gh api user` and for synthesizing email payloads via `gh api`. Required for identity-gated triggers and all email triggers. |
 | `WEBHOOK_PORT` | Override listener port (default 5050). |
 | `WEBHOOKS_CONFIG` | Path to `webhooks.json` (default `~/.config/opencode/webhooks.json`). |
+| `SENTRY_DSN` | Sentry DSN for error tracking. If set, `Sentry.init()` is called at plugin startup and unhandled rejections are captured. |
 
 ## Health check
 

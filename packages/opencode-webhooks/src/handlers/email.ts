@@ -4,6 +4,10 @@
 // identify the referenced GitHub entity from Message-ID/In-Reply-To/
 // References, fetch canonical state via `gh`, and drive the same
 // dispatcher the github handler uses.
+//
+// Synthesized event is "email.<reason>" where <reason> is the
+// X-GitHub-Reason header (lowercased): mention, review_requested,
+// assign, comment, …
 
 import type { Context } from "hono"
 import type { AppEnv } from "../handler"

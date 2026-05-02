@@ -44,6 +44,10 @@ export function createApp(opts: {
 
   const app = new Hono<AppEnv>()
 
+  app.get("/healthz", (c) => {
+    return c.json({ ok: true, plugin: "opencode-webhooks" })
+  })
+
   // Inject shared deps into context for all routes.
   app.use("*", async (c, next) => {
     c.set("secret", opts.secret)
@@ -56,10 +60,6 @@ export function createApp(opts: {
     c.set("githubTriggers", githubTriggers)
     c.set("emailTriggers", emailTriggers)
     await next()
-  })
-
-  app.get("/healthz", (c) => {
-    return c.json({ ok: true, plugin: "opencode-webhooks" })
   })
 
   app.post("/webhooks/github", githubWebhookHandler)
