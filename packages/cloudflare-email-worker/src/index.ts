@@ -1,11 +1,11 @@
 // Cloudflare Email Worker: dumb pipe in front of opencode-webhooks.
 //
 // Pipeline per inbound email:
-//   1. message.forward(FORWARD_TO) — unconditional, every email reaches
-//      the operator's real inbox so nothing is silently swallowed.
-//   2. If message.from is in ALLOWED_SENDERS, build a small JSON event
-//      from the headers we care about, HMAC-sign it, and POST to
-//      WEBHOOK_URL. Non-allowlisted mail is forward-only (no agent).
+//   1. If sender != FORWARD_TO: message.forward(FORWARD_TO). Skipped
+//      when the sender IS the FORWARD_TO address to prevent a loop.
+//   2. If message.from is in ALLOWED_SENDERS or matches FORWARD_TO,
+//      build a small JSON event from the headers we care about,
+//      HMAC-sign it, and POST to WEBHOOK_URL.
 //   3. On 5xx from the webhook, throw so Cloudflare retries the email.
 //      4xx is permanent (signature rejected, dedup hit, etc.) — accept.
 //
@@ -28,6 +28,10 @@ export interface Env {
   // Optional. If set, every inbound email is forwarded here verbatim
   // (DKIM-preserving via Cloudflare's message.forward()). The address
   // must be verified in Cloudflare Email Routing first.
+  //
+  // Emails FROM this address are auto-allowed for the webhook (replies
+  // from the operator's inbox trigger the agent) and are NOT forwarded
+  // back (prevents loop).
   FORWARD_TO?: string
 }
 
@@ -40,11 +44,15 @@ const COMPILED_PATTERNS: Pattern[] = compilePatterns(ALLOWED_SENDERS)
 export default {
   async email(message, env, _ctx) {
     const messageId = message.headers.get("message-id") ?? ""
+    const senderAddr = extractAddress(message.from).toLowerCase()
+    const forwardTo = extractAddress(env.FORWARD_TO ?? "").toLowerCase()
+    const isFromForwardTo = forwardTo !== "" && senderAddr === forwardTo
 
-    // 1. Always forward to the operator's inbox if configured. Wrap in
-    //    try/catch so a bad FORWARD_TO (unverified destination, etc.)
-    //    doesn't block webhook dispatch — log loudly and continue.
-    if (env.FORWARD_TO) {
+    // 1. Forward to the operator's inbox — unless the email came FROM
+    //    that same address (reply from the operator). Wrap in try/catch
+    //    so a bad FORWARD_TO (unverified destination, etc.) doesn't
+    //    block webhook dispatch.
+    if (env.FORWARD_TO && !isFromForwardTo) {
       try {
         await message.forward(env.FORWARD_TO)
       } catch (err) {
@@ -54,8 +62,8 @@ export default {
       }
     }
 
-    // 2. Webhook gate: only allowlisted senders trigger an agent run.
-    if (!matchesAnyPattern(message.from, COMPILED_PATTERNS)) {
+    // 2. Webhook gate: allowlisted senders or FORWARD_TO replies.
+    if (!isFromForwardTo && !matchesAnyPattern(message.from, COMPILED_PATTERNS)) {
       console.log(
         `webhook skipped: from=${message.from} (not in allowlist)`,
       )

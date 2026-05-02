@@ -78,4 +78,8 @@
 
 <!-- lore:019de622-bdfa-7267-9101-3c11dceb04e1 -->
 * **Dispatch errors reported to Sentry with trigger/delivery tags via withScope**: Dispatch errors reported to Sentry with trigger/delivery tags via \`withScope\`. In \`pipeline.ts\`, both the affinity path (\`createAndPrompt\`/\`followUp\`) and the fire-and-forget path (\`fireAndForget\`) wrap \`Sentry.captureException(err)\` in \`Sentry.withScope()\` to attach \`trigger.name\`, \`trigger.event\`, \`delivery.id\`, and \`entity.key\` scoped only to that error event. Pattern: \`Sentry.withScope(scope => { scope.setTag(...); Sentry.captureException(err) })\`. Note: \`dispatch.ts\` was deleted; the pattern now lives exclusively in \`pipeline.ts\`.
+
+<!-- lore:019de984-4bcd-7f21-acb9-384550d3fb3c -->
+* **Hono JSX dashboard files require jsx/jsxImportSource in tsconfig**: If `packages/opencode-webhooks/src/` includes `.tsx` files using Hono JSX, the tsconfig must have `"jsx": "react-jsx"` and `"jsxImportSource": "hono/jsx"`. Without these, Bun defaults to `React.createElement`, throws `React is not defined` on import, and crashes the plugin before `Bun.serve` runs — silently killing the webhook port. Fix: add both keys to `packages/opencode-webhooks/tsconfig.json` `compilerOptions`.
+
 <!-- End lore-managed section -->
