@@ -70,6 +70,14 @@ prompt to the sub-agent should include:
    (`resolve-issue`, `review-pr`, `fix-ci`, `respond-to-comment`)
 6. The utility skills available: `deslop`, `review`, `pr`
 
+### Issue resolution: check for existing PRs first
+
+When spawning a sub-agent for issue resolution, **always** tell it to
+check for existing PRs that reference the issue before starting fresh
+work. The `resolve-issue` skill has this step built in — make sure
+your prompt reinforces it with the issue number and repo so the
+sub-agent can run the lookup immediately.
+
 The sub-agent handles cloning, implementation, committing, and
 pushing. You receive its result and report back.
 
