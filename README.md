@@ -82,19 +82,34 @@ that route all supported GitHub events to the unified `github-agent`:
 | `email-event` | `email.*` (any email notification) | `ignore_authors: [$BOT_LOGIN]` | `github-agent` |
 
 The agent receives the **raw webhook payload** and decides what to do.
-It runs pre-flight checks (self-loop guard, involvement check) and
-then loads the appropriate situation skill:
+It triages the event and spawns sub-agents (via the `task` tool) for
+the actual work:
 
-- **Issue assigned** → `repo-setup` + `resolve-issue` → draft PR
-- **PR opened/ready/review-requested/assigned** → `repo-setup` + `review-pr` → review or self-fix
-- **CI failed** → `repo-setup` + `fix-ci` → smallest fix + comment
-- **Comment/review on PR** → `repo-setup` + `respond-to-comment` → triage + reply/fix
+- **Issue assigned** → sub-agent loads `repo-setup` + `resolve-issue` → draft PR
+- **PR needs review** → sub-agent loads `repo-setup` + `review-pr` → review or self-fix
+- **CI failed** → sub-agent loads `repo-setup` + `fix-ci` → smallest fix + comment
+- **Comment/review on PR** → sub-agent loads `repo-setup` + `respond-to-comment` → triage + reply/fix
 
-The plugin only handles self-loop prevention (`ignore_authors` with
-`$BOT_LOGIN`) and deduplication. All identity checks, payload
-filtering, and routing decisions are made by the agent itself, giving
-it the flexibility to chain skills within a single session (e.g.,
-resolve an issue → self-review → open PR, all in one context window).
+### Session affinity
+
+The plugin extracts an **entity key** (`owner/repo#N`) from each
+webhook payload and routes all events for the same entity to the same
+OpenCode session. This means:
+
+- When the bot resolves an issue and opens a PR, the subsequent CI
+  failure webhook arrives as a follow-up message in the same session —
+  the agent already has full context about the implementation.
+- Review comments on a PR arrive in the session that's already working
+  on that PR, so the agent can act on them immediately.
+- If the session is busy (processing a previous prompt), incoming
+  events queue in an in-memory buffer and are flushed as a single
+  batched follow-up when the current prompt completes.
+
+Events without a recognizable entity key fall through to one-shot
+sessions (fire-and-forget, same as before).
+
+The `batch_window_ms` config option (default 5s) controls how long
+the pipeline waits for additional events before flushing the queue.
 
 Once `GITHUB_WEBHOOK_SECRET` is set and `GH_TOKEN` is available
 (both required), the plugin boots its listener on port 5050

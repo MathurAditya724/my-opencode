@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Review a pull request. Determines whether the bot authored the PR (self-review path with fixes) or someone else did (post a GitHub review). Uses the review skill for the actual review pass.
+description: Review a pull request. Self-fix on own PRs, post a review on others'. Load repo-setup first.
 license: Apache-2.0
 metadata:
   audience: autonomous-agents
@@ -8,99 +8,19 @@ metadata:
 
 # Review PR
 
-Review a pull request the bot is involved in (author, requested
-reviewer, or assignee). The `repo-setup` skill has already checked
-out the PR.
+Review a PR the bot is involved in. Load `repo-setup` first.
 
-## 1. Whose PR is it?
+## Workflow
 
-```sh
-PR_AUTHOR=$(gh pr view <pr-number> --json author --jq .author.login)
-ME=$(gh api user --jq .login)
-```
+1. Check authorship: `gh pr view <N> --json author --jq .author.login`
+   vs `gh api user --jq .login`. Skip drafts unless it's your own PR.
+2. Read the PR's intent (body, linked issues, commit log).
+3. Load `review` skill. For large diffs, use an `explore` sub-agent.
+4. Act on findings:
+   - **No findings**: post a `--comment` review (reserve `--approve`
+     for when you can vouch for correctness).
+   - **Findings on own PR**: load `apply-fixes` skill to push fixes.
+   - **Findings on others' PR**: post `--request-changes` or
+     `--comment` review via `gh pr review`. Don't push to their branch.
 
-`OWN_PR=true` if `PR_AUTHOR == ME` (case-insensitive), else `false`.
-
-If the PR is a **draft** and `OWN_PR=false`, stop:
-`SKIPPED: PR is draft`. Drafts authored by the bot are fine to
-self-review.
-
-## 2. Read the PR's intent
-
-- PR body.
-- Closed issues: look for `Closes #N` / `Fixes #N` / `Resolves #N`
-  and run `gh issue view N`.
-- Commit messages: `git log --oneline "$DEFAULT_BRANCH"..HEAD`.
-
-State what you think the PR is trying to do.
-
-## 3. Run the review skill
-
-Load the `review` skill and follow it. For larger diffs, prefer
-spawning the `explore` sub-agent via the `task` tool for the read
-pass.
-
-Normalize findings into this shape:
-
-```json
-[
-  {
-    "kind": "bug" | "test-gap" | "style" | "scope" | "docs",
-    "file": "src/foo.ts",
-    "line": 42,
-    "summary": "one-line description",
-    "suggested_fix": "one-line description of the change"
-  }
-]
-```
-
-## 4. Act on the findings
-
-### 4a. Empty findings
-
-Default to `--comment` with a one-paragraph summary. Reserve
-`--approve` for cases where you have a positive reason to vouch for
-the change (traced the diff against the linked issue, ran tests, the
-change is non-trivial enough to give real signal). Don't rubber-stamp.
-
-```sh
-gh pr review <pr-number> --comment --body "..."
-```
-
-### 4b. Findings, OWN_PR=true
-
-Load the `apply-fixes` skill. Pass it the findings JSON. It will
-implement and push fixes. After it completes:
-
-- **Success** -- don't post a review. The commits speak for
-  themselves. Print the commit SHA.
-- **BLOCKED** -- fall through to 4c (post a review with the findings).
-
-### 4c. Findings, OWN_PR=false (or apply-fixes blocked)
-
-Post a structured GitHub review:
-
-- **REQUEST_CHANGES** if any finding has `kind: "bug"` or
-  `kind: "test-gap"` on a critical path.
-- **COMMENT** otherwise.
-
-```sh
-gh pr review <pr-number> --request-changes --body "$(cat <<'EOF'
-<one-paragraph summary>
-
-- src/foo.ts:42 — <summary>
-- src/bar.ts:7  — <summary>
-EOF
-)"
-```
-
-## 5. Print the URL
-
-The review URL or commit URL, as the final line of your reply.
-
-## Constraints
-
-- Don't push code yourself on someone else's PR. Pushing happens
-  through `apply-fixes` on your own PRs only.
-- Don't approve trivially.
-- Don't merge the PR.
+Don't approve trivially. Don't merge.

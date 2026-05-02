@@ -8,7 +8,6 @@
 
 import { Hono } from "hono"
 import * as Sentry from "@sentry/bun"
-import type { Dispatcher } from "./dispatch"
 import type { AllowlistPattern } from "./email/allowlist"
 import {
   getDeliveryHandler,
@@ -16,6 +15,7 @@ import {
 } from "./handlers/deliveries"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
+import type { Pipeline } from "./pipeline"
 import type { DeliveryStore } from "./storage"
 import type { NormalizedTrigger } from "./types"
 
@@ -26,7 +26,7 @@ export type AppEnv = {
     emailAllowlist: AllowlistPattern[]
     store: DeliveryStore
     retention: number
-    dispatch: Dispatcher
+    pipeline: Pipeline
     botLogin: string | null
     githubTriggers: NormalizedTrigger[]
     emailTriggers: NormalizedTrigger[]
@@ -40,7 +40,7 @@ export function createApp(opts: {
   triggers: NormalizedTrigger[]
   store: DeliveryStore
   retention: number
-  dispatch: Dispatcher
+  pipeline: Pipeline
   botLogin: string | null
 }): Hono<AppEnv> {
   const githubTriggers = opts.triggers.filter(
@@ -133,7 +133,7 @@ export function createApp(opts: {
     c.set("emailAllowlist", opts.emailAllowlist)
     c.set("store", opts.store)
     c.set("retention", opts.retention)
-    c.set("dispatch", opts.dispatch)
+    c.set("pipeline", opts.pipeline)
     c.set("botLogin", opts.botLogin)
     c.set("githubTriggers", githubTriggers)
     c.set("emailTriggers", emailTriggers)

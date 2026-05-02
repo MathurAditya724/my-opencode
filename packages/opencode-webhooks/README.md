@@ -70,6 +70,7 @@ Minimal config:
 | `default_cwd` | OpenCode project root | Fallback session cwd when a trigger doesn't override. |
 | `db_path` | `${XDG_DATA_HOME or ~/.local/share}/opencode-webhooks/deliveries.sqlite` | SQLite path for delivery dedup. |
 | `retention` | `1000` | Max deliveries kept in dedup DB; oldest pruned. |
+| `batch_window_ms` | `5000` | How long to wait for additional events before flushing the pipeline queue as a batched follow-up prompt. Allows coalescing rapid-fire events (e.g. CI failure + review comment) into a single prompt. |
 | `triggers` | `[]` | Array of trigger objects (see below). |
 
 ### Trigger fields

@@ -1,6 +1,6 @@
 ---
 name: apply-fixes
-description: Apply a structured list of review findings as the smallest possible code changes, then commit and push. Used after the review skill produces findings on the bot's own PR.
+description: Apply review findings as the smallest code changes, then commit and push. Used on the bot's own PRs.
 license: Apache-2.0
 metadata:
   audience: autonomous-agents
@@ -8,71 +8,20 @@ metadata:
 
 # Apply Fixes
 
-Take a JSON array of review findings and turn them into commits.
-The PR branch is already checked out.
+Turn a JSON array of review findings into commits on the current branch.
 
 ## Input
 
-A JSON array of findings, each with `kind`, `file`, `line`,
-`summary`, `suggested_fix` — the shape the `review` skill emits.
+Findings array with `kind`, `file`, `line`, `summary`, `suggested_fix`.
 
-## 1. Sanity check
+## Workflow
 
-```sh
-git status --porcelain
-git rev-parse --abbrev-ref HEAD
-```
+1. Verify you're on a feature branch, not the default.
+2. Plan: decide which findings are tractable in small changes vs. skip.
+3. Implement one finding at a time. Smallest change per finding.
+4. Run tests if you can find the command quickly.
+5. Load `deslop` skill.
+6. Commit and push. Stage only files you edited.
 
-If the branch is the default branch, stop: `BLOCKED: refusing to
-push to default branch`.
-
-If `git status --porcelain` shows staged changes (lines not starting
-with `??` or ` `), stop: `BLOCKED: staged changes present`.
-
-## 2. Plan the fixes
-
-For each finding, decide:
-
-- **Tractable in a small change** — include it.
-- **Requires architectural rework** — skip. Note the skip.
-- **Style/scope on code the diff doesn't carry** — skip with a note.
-
-State the plan as a bulleted list before editing.
-
-## 3. Implement
-
-One finding at a time. Smallest change per finding. Update or add
-tests when the finding is `kind: bug` or `kind: test-gap`.
-
-If a finding's `suggested_fix` is wrong (you tried it, it doesn't
-work), apply the real fix and note the deviation.
-
-## 4. Run tests if you can
-
-If you can identify the test command in under 30 seconds, run it.
-If anything breaks that wasn't already broken, back out the offending
-change.
-
-## 5. Clean up the diff
-
-Load the `deslop` skill.
-
-## 6. Commit and push
-
-One commit covering all fixes. Stage only files you edited:
-
-```sh
-git add <file1> <file2> ...
-git commit -m "Address review findings" -m "<short body>"
-git push
-```
-
-Don't push --force.
-
-## 7. Report
-
-Final output:
-
-- Commit SHA you pushed.
-- Bullet list of findings addressed (one line each, by file).
-- Bullet list of findings skipped, with the reason.
+Report: commit SHA, findings addressed, findings skipped with reasons.
+Don't force-push. Don't open a new branch or PR.

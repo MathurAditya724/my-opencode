@@ -57,6 +57,12 @@ export type DeliveryStore = {
   markFailed(dispatchId: number, error: string): void
   markTimeout(dispatchId: number): void
 
+  // Session affinity: bind an entity key to an OpenCode session.
+  bindSession(entityKey: string, sessionId: string): void
+  // Look up the session id for an entity key. Returns null if no
+  // active session.
+  lookupSession(entityKey: string): string | null
+
   // Read API for the GET endpoints.
   listDeliveries(opts: ListDeliveriesOpts): ListDeliveriesResult
   getDelivery(
@@ -102,6 +108,14 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
     CREATE INDEX IF NOT EXISTS idx_dispatches_delivery ON dispatches(delivery_id);
     CREATE INDEX IF NOT EXISTS idx_dispatches_status   ON dispatches(status);
     CREATE INDEX IF NOT EXISTS idx_dispatches_started  ON dispatches(started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS entity_sessions (
+      entity_key   TEXT NOT NULL PRIMARY KEY,
+      session_id   TEXT NOT NULL,
+      bound_at     INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_entity_sessions_session
+      ON entity_sessions(session_id);
   `)
 
   const insertStmt = db.prepare<
@@ -135,6 +149,15 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   )
   const markTimeoutStmt = db.prepare<void, [number, number]>(
     `UPDATE dispatches SET status = 'timeout', completed_at = ? WHERE id = ?`,
+  )
+
+  const bindSessionStmt = db.prepare<void, [string, string, number]>(
+    `INSERT INTO entity_sessions (entity_key, session_id, bound_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(entity_key) DO UPDATE SET session_id = excluded.session_id, bound_at = excluded.bound_at`,
+  )
+  const lookupSessionStmt = db.prepare<{ session_id: string }, [string]>(
+    `SELECT session_id FROM entity_sessions WHERE entity_key = ?`,
   )
 
   const getDeliveryStmt = db.prepare<DeliveryRow, [string]>(
@@ -184,6 +207,14 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
     },
     markTimeout(dispatchId) {
       markTimeoutStmt.run(Date.now(), dispatchId)
+    },
+
+    bindSession(entityKey, sessionId) {
+      bindSessionStmt.run(entityKey, sessionId, Date.now())
+    },
+    lookupSession(entityKey) {
+      const row = lookupSessionStmt.get(entityKey)
+      return row?.session_id ?? null
     },
 
     listDeliveries(opts) {

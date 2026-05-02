@@ -28,7 +28,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   const triggers = c.get("emailTriggers")
   const store = c.get("store")
   const retention = c.get("retention")
-  const dispatch = c.get("dispatch")
+  const pipeline = c.get("pipeline")
   const botLogin = c.get("botLogin")
 
   if (!emailSecret) {
@@ -141,7 +141,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       delivery_id: deliveryId,
       payload: synth.payload,
     },
-    dispatch,
+    pipeline,
     store,
   })
 

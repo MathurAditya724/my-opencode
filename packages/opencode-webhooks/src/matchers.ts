@@ -1,9 +1,10 @@
 // Per-trigger filters + the shared evaluate-and-dispatch loop used by
 // both the GitHub and email fetch handlers. The agent handles identity
 // gates and payload filtering; the plugin only handles event matching,
-// self-loop guard (ignore_authors), and dispatch.
+// self-loop guard (ignore_authors), and dispatch via the pipeline.
 
-import type { Dispatcher } from "./dispatch"
+import { extractEntityKey } from "./entity"
+import type { Pipeline } from "./pipeline"
 import type { DeliveryStore } from "./storage"
 import { renderTemplate } from "./template"
 import type { NormalizedTrigger, SkippedDispatch } from "./types"
@@ -49,8 +50,10 @@ export function evaluateIgnoreAuthors(
   return null
 }
 
-// Run the full per-trigger pipeline (sender guard → template → dispatch).
-// The agent itself handles identity gates and payload shape checks.
+// Run the full per-trigger pipeline (sender guard → entity extraction
+// → session affinity → dispatch). Events for the same entity reuse
+// the same OpenCode session; events without a recognizable entity
+// fall through to fire-and-forget dispatch.
 export function evaluateAndDispatch(opts: {
   triggers: NormalizedTrigger[]
   event: string
@@ -60,11 +63,14 @@ export function evaluateAndDispatch(opts: {
   botLogin: string | null
   deliveryId: string
   templateContext: Record<string, unknown>
-  dispatch: Dispatcher
+  pipeline: Pipeline
   store: DeliveryStore
 }): { dispatched: string[]; skipped: SkippedDispatch[] } {
   const dispatched: string[] = []
   const skipped: SkippedDispatch[] = []
+
+  const entityKey = extractEntityKey(opts.event, opts.payload)
+
   for (const t of findMatching(opts.triggers, opts.event, opts.action)) {
     const reason = evaluateIgnoreAuthors(t.ignore_authors, opts.sender)
     if (reason) {
@@ -80,7 +86,25 @@ export function evaluateAndDispatch(opts: {
       opts.event,
       t.agent,
     )
-    void opts.dispatch(t, prompt, opts.deliveryId, opts.event, dispatchId)
+
+    if (entityKey) {
+      opts.pipeline.dispatch(
+        entityKey,
+        t,
+        prompt,
+        opts.deliveryId,
+        opts.event,
+        dispatchId,
+      )
+    } else {
+      opts.pipeline.dispatchNoAffinity(
+        t,
+        prompt,
+        opts.deliveryId,
+        opts.event,
+        dispatchId,
+      )
+    }
     dispatched.push(t.name)
   }
   return { dispatched, skipped }

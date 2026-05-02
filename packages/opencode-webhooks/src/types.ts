@@ -33,6 +33,9 @@ export type WebhookConfig = {
   email_allowed_senders?: string[]
   timeout_ms?: number           // per-session abort, default 30 min
   max_concurrent?: number       // default 2
+  // How long to wait for additional events before flushing the pipeline
+  // queue as a batched follow-up prompt. Default 5000 (5s).
+  batch_window_ms?: number
   default_cwd?: string          // fallback session cwd
   db_path?: string              // dedup SQLite file
   retention?: number            // cap on persisted deliveries, default 1000

@@ -13,7 +13,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
   const triggers = c.get("githubTriggers")
   const store = c.get("store")
   const retention = c.get("retention")
-  const dispatch = c.get("dispatch")
+  const pipeline = c.get("pipeline")
   const botLogin = c.get("botLogin")
 
   if (!secret) {
@@ -77,7 +77,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
       delivery_id: newDeliveryId,
       payload,
     },
-    dispatch,
+    pipeline,
     store,
   })
 

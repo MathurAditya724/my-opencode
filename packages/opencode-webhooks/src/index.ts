@@ -10,8 +10,8 @@ import { homedir } from "node:os"
 import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
 import { parseAllowlist } from "./email/allowlist"
-import { makeDispatcher } from "./dispatch"
 import { createApp } from "./handler"
+import { makePipeline } from "./pipeline"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
 import { openDeliveryStore } from "./storage"
 export type {
@@ -105,16 +105,18 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     )
   }
 
+  const batchWindowMs = cfg.batch_window_ms ?? 5_000
   const store = openDeliveryStore(dbPath)
   const semaphore = makeSemaphore(maxConcurrent)
   const drainCounter = makeDrainCounter()
-  const dispatch = makeDispatcher({
+  const pipeline = makePipeline({
     client: ctx.client,
     defaultCwd,
     timeoutMs,
     semaphore,
     drainCounter,
     store,
+    batchWindowMs,
   })
 
   const app = createApp({
@@ -124,7 +126,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     triggers,
     store,
     retention,
-    dispatch,
+    pipeline,
     botLogin,
   })
 
