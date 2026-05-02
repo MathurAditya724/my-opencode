@@ -1,4 +1,4 @@
-/** @jsxImportSource hono/jsx */
+import { html } from "hono/html"
 import { Layout } from "./layout"
 import { statusIcon, statusClass, timeAgo } from "./helpers"
 
@@ -29,69 +29,72 @@ export function OverviewPage({ stats, recent }: OverviewProps) {
   const successRate = total > 0 ? Math.round((succeeded / total) * 100) : 0
   const failedCount = failed + timedOut
 
-  return (
-    <Layout title="Overview" autoRefresh={10} activePage="overview">
-      <div class="stats-row">
-        <div class="stat-card">
-          <div class="stat-label">Active Entities</div>
-          <div class="stat-value blue">{stats.active_entities}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Events Today</div>
-          <div class="stat-value">{stats.today_count}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Success Rate</div>
-          <div class={`stat-value ${successRate >= 90 ? "green" : successRate >= 50 ? "" : "red"}`}>
-            {successRate}%
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Failed / Timeout</div>
-          <div class={`stat-value ${failedCount > 0 ? "red" : "green"}`}>
-            {failedCount}
-          </div>
+  const content = html`
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Active Entities</div>
+        <div class="stat-value blue">${stats.active_entities}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Events Today</div>
+        <div class="stat-value">${stats.today_count}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Success Rate</div>
+        <div class="stat-value ${successRate >= 90 ? "green" : successRate >= 50 ? "" : "red"}">
+          ${successRate}%
         </div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">Failed / Timeout</div>
+        <div class="stat-value ${failedCount > 0 ? "red" : "green"}">
+          ${failedCount}
+        </div>
+      </div>
+    </div>
 
-      <h2 style="font-size:16px; font-weight:600; color:#e6edf3; margin-bottom:16px;">
-        Recent Activity
-      </h2>
+    <h2 style="font-size:16px; font-weight:600; color:#e6edf3; margin-bottom:16px;">
+      Recent Activity
+    </h2>
 
-      {recent.length === 0 ? (
+    ${recent.length === 0
+      ? html`
         <div class="empty-state">
           <p>No activity yet</p>
           <span class="text-small text-muted">Events will appear here once webhooks are received</span>
         </div>
-      ) : (
+      `
+      : html`
         <ul class="feed">
-          {recent.map((r) => {
+          ${recent.map((r) => {
             const eventLabel = r.action ? `${r.event}.${r.action}` : r.event
             const entityDisplay = r.entity_key ?? "\u2014"
             const entityHref = r.entity_key
               ? `/dashboard/entities/${encodeURIComponent(r.entity_key)}`
               : null
-            return (
+            return html`
               <li class="feed-item">
-                <span class={`feed-icon ${statusClass(r.status)}`}>
-                  {statusIcon(r.status)}
+                <span class="feed-icon ${statusClass(r.status)}">
+                  ${statusIcon(r.status)}
                 </span>
                 <span class="feed-entity">
-                  {entityHref
-                    ? <a href={entityHref}>{entityDisplay}</a>
+                  ${entityHref
+                    ? html`<a href="${entityHref}">${entityDisplay}</a>`
                     : entityDisplay
                   }
                 </span>
-                <span class="feed-event mono">{eventLabel}</span>
+                <span class="feed-event mono">${eventLabel}</span>
                 <span class="feed-outcome">
-                  {r.outcome ?? ""}
+                  ${r.outcome ?? ""}
                 </span>
-                <span class="feed-time">{timeAgo(r.started_at)}</span>
+                <span class="feed-time">${timeAgo(r.started_at)}</span>
               </li>
-            )
+            `
           })}
         </ul>
-      )}
-    </Layout>
-  )
+      `
+    }
+  `
+
+  return Layout({ title: "Overview", content, autoRefresh: 10, activePage: "overview" })
 }

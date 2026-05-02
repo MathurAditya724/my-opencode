@@ -1,22 +1,21 @@
-/** @jsxImportSource hono/jsx */
-import type { Child } from "hono/jsx"
+import { html, raw } from "hono/html"
 
 type LayoutProps = {
   title: string
-  children: Child
+  content: unknown
   autoRefresh?: number
   activePage?: "overview" | "entity-detail"
 }
 
-export function Layout({ title, children, autoRefresh, activePage }: LayoutProps) {
-  return (
+export function Layout({ title, content, autoRefresh, activePage }: LayoutProps) {
+  return html`
     <html lang="en">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {autoRefresh ? <meta http-equiv="refresh" content={String(autoRefresh)} /> : null}
-        <title>{title} — opencode-webhooks</title>
-        <style>{CSS}</style>
+        ${autoRefresh ? html`<meta http-equiv="refresh" content="${String(autoRefresh)}" />` : ""}
+        <title>${title} — opencode-webhooks</title>
+        <style>${raw(CSS)}</style>
       </head>
       <body>
         <nav class="sidebar">
@@ -26,7 +25,7 @@ export function Layout({ title, children, autoRefresh, activePage }: LayoutProps
           </div>
           <ul class="nav-list">
             <li>
-              <a href="/dashboard" class={activePage === "overview" ? "nav-link active" : "nav-link"}>
+              <a href="/dashboard" class="${activePage === "overview" ? "nav-link active" : "nav-link"}">
                 Overview
               </a>
             </li>
@@ -41,15 +40,15 @@ export function Layout({ title, children, autoRefresh, activePage }: LayoutProps
         </nav>
         <main class="content">
           <header class="page-header">
-            <h1>{title}</h1>
+            <h1>${title}</h1>
           </header>
           <div class="page-body">
-            {children}
+            ${content}
           </div>
         </main>
       </body>
     </html>
-  )
+  `
 }
 
 const CSS = `
