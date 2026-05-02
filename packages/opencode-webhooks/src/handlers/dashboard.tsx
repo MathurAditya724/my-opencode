@@ -6,16 +6,6 @@ import type { Context } from "hono"
 import type { AppEnv } from "../handler"
 import { OverviewPage } from "../dashboard/overview"
 import { EntityDetailPage } from "../dashboard/entity-detail"
-import { DeliveriesPage } from "../dashboard/deliveries"
-import type { DispatchStatus } from "../types"
-
-const VALID_STATUSES: ReadonlySet<string> = new Set([
-  "pending",
-  "running",
-  "succeeded",
-  "failed",
-  "timeout",
-])
 
 export function dashboardOverviewHandler(c: Context<AppEnv>) {
   const store = c.get("store")
@@ -54,32 +44,6 @@ export function dashboardEntityHandler(c: Context<AppEnv>) {
       entity_key={result.entity_key}
       session_id={result.session_id}
       events={result.events}
-    />
-  )
-}
-
-export function dashboardDeliveriesHandler(c: Context<AppEnv>) {
-  const store = c.get("store")
-  const url = new URL(c.req.url)
-  const event = url.searchParams.get("event") ?? undefined
-  const statusRaw = url.searchParams.get("status")
-  const status: DispatchStatus | undefined = statusRaw && VALID_STATUSES.has(statusRaw)
-    ? (statusRaw as DispatchStatus)
-    : undefined
-  const cursor = url.searchParams.get("cursor") ?? undefined
-
-  const { rows, next_cursor } = store.listDeliveries({
-    limit: 50,
-    cursor,
-    event,
-    status: status ?? null,
-  })
-
-  return c.html(
-    <DeliveriesPage
-      deliveries={rows}
-      next_cursor={next_cursor}
-      filters={{ event, status }}
     />
   )
 }

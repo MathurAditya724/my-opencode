@@ -5,7 +5,7 @@ type LayoutProps = {
   title: string
   children: Child
   autoRefresh?: number
-  activePage?: "overview" | "entities" | "deliveries"
+  activePage?: "overview" | "entity-detail"
 }
 
 export function Layout({ title, children, autoRefresh, activePage }: LayoutProps) {
@@ -30,20 +30,13 @@ export function Layout({ title, children, autoRefresh, activePage }: LayoutProps
                 Overview
               </a>
             </li>
-            <li>
-              <a href="/dashboard/entities" class={activePage === "entities" ? "nav-link active" : "nav-link"}>
-                Entities
-              </a>
-            </li>
-            <li>
-              <a href="/dashboard/deliveries" class={activePage === "deliveries" ? "nav-link active" : "nav-link"}>
-                Deliveries
-              </a>
-            </li>
           </ul>
           <div class="sidebar-footer">
-            <a href="/healthz" class="nav-link subtle">healthz</a>
-            <a href="/deliveries" class="nav-link subtle">API</a>
+            <div style="padding: 4px 16px; font-size: 11px; color: #6e7681; text-transform: uppercase; letter-spacing: 0.5px;">API</div>
+            <a href="/api/entities" class="nav-link subtle" target="_blank">Entities</a>
+            <a href="/api/stats" class="nav-link subtle" target="_blank">Stats</a>
+            <a href="/deliveries" class="nav-link subtle" target="_blank">Deliveries</a>
+            <a href="/healthz" class="nav-link subtle" target="_blank">Health</a>
           </div>
         </nav>
         <main class="content">

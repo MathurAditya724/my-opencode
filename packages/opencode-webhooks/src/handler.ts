@@ -23,7 +23,6 @@ import {
 import {
   dashboardOverviewHandler,
   dashboardEntityHandler,
-  dashboardDeliveriesHandler,
 } from "./handlers/dashboard"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
@@ -142,7 +141,6 @@ export function createApp(opts: {
   app.get("/dashboard", dashboardOverviewHandler)
   app.get("/dashboard/entities", (c) => c.redirect("/dashboard"))
   app.get("/dashboard/entities/:key", dashboardEntityHandler)
-  app.get("/dashboard/deliveries", dashboardDeliveriesHandler)
 
   // Dashboard retry: POST form action that retries and redirects back.
   app.use("/dashboard/dispatches/*", dispatchMiddleware)
