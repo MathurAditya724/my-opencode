@@ -3,6 +3,7 @@
 // null on match (= proceed) or a string reason on miss (= skip).
 
 import type { Dispatcher } from "./dispatch"
+import type { DeliveryStore } from "./storage"
 import { lookup, lookupAll, renderTemplate } from "./template"
 import type { NormalizedTrigger, SkippedDispatch } from "./types"
 
@@ -97,6 +98,7 @@ export function evaluateAndDispatch(opts: {
   deliveryId: string
   templateContext: Record<string, unknown>
   dispatch: Dispatcher
+  store: DeliveryStore
 }): { dispatched: string[]; skipped: SkippedDispatch[] } {
   const dispatched: string[] = []
   const skipped: SkippedDispatch[] = []
@@ -110,7 +112,15 @@ export function evaluateAndDispatch(opts: {
       continue
     }
     const prompt = renderTemplate(t.prompt_template, opts.templateContext)
-    void opts.dispatch(t, prompt, opts.deliveryId, opts.event)
+    // Persist a pending row before fire-and-forget so the lifecycle
+    // is recoverable from the DB even if the dispatcher crashes.
+    const dispatchId = opts.store.createDispatch(
+      opts.deliveryId,
+      t.name,
+      opts.event,
+      t.agent,
+    )
+    void opts.dispatch(t, prompt, opts.deliveryId, opts.event, dispatchId)
     dispatched.push(t.name)
   }
   return { dispatched, skipped }

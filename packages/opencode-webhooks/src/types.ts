@@ -57,3 +57,41 @@ export type SkippedDispatch = {
   name: string
   reason: string
 }
+
+// Lifecycle states for a dispatch row. pending = matched + persisted but
+// session.create not yet called; running = session created, prompt in
+// flight; the rest are terminal.
+export type DispatchStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "timeout"
+
+export type DispatchRow = {
+  id: number
+  delivery_id: string
+  trigger_name: string
+  matched_event: string
+  agent: string
+  session_id: string | null
+  status: DispatchStatus
+  started_at: number
+  completed_at: number | null
+  error: string | null
+}
+
+export type DeliveryRow = {
+  delivery_id: string
+  event: string
+  action: string | null
+  received_at: number
+}
+
+// List-view row: delivery + per-status dispatch counts. Cheap to compute
+// via LEFT JOIN + GROUP BY so the list endpoint stays paginated without
+// nested arrays.
+export type DeliveryListItem = DeliveryRow & {
+  dispatch_count: number
+  statuses: Partial<Record<DispatchStatus, number>>
+}

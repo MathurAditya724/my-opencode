@@ -1,6 +1,7 @@
-// Hono app for the plugin's HTTP listener. Three routes — healthz +
-// one per ingest source — sharing the same dispatcher, store, and
-// trigger config. Per-route logic lives under ./handlers/.
+// Hono app for the plugin's HTTP listener. Routes: healthz, two
+// delivery read endpoints, and one webhook ingest per source — sharing
+// the same dispatcher, store, and trigger config. Per-route logic
+// lives under ./handlers/.
 //
 // Triggers are split by `source` here once so the handlers don't need
 // to know about other ingest paths.
@@ -9,6 +10,10 @@ import { Hono } from "hono"
 import * as Sentry from "@sentry/bun"
 import type { Dispatcher } from "./dispatch"
 import type { AllowlistPattern } from "./email/allowlist"
+import {
+  getDeliveryHandler,
+  listDeliveriesHandler,
+} from "./handlers/deliveries"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
 import type { DeliveryStore } from "./storage"
@@ -105,6 +110,21 @@ export function createApp(opts: {
       )
     })
   })
+
+  // The read API only needs the store; inject it on a broader matcher
+  // so it covers both /deliveries and /deliveries/:id without needing
+  // the rest of the webhook deps.
+  app.use("/deliveries", async (c, next) => {
+    c.set("store", opts.store)
+    await next()
+  })
+  app.use("/deliveries/*", async (c, next) => {
+    c.set("store", opts.store)
+    await next()
+  })
+
+  app.get("/deliveries", listDeliveriesHandler)
+  app.get("/deliveries/:id", getDeliveryHandler)
 
   // Inject shared deps into context for webhook routes.
   app.use("/webhooks/*", async (c, next) => {
