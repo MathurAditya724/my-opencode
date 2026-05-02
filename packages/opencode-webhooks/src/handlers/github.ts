@@ -78,6 +78,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
       ...synthetics,
     },
     dispatch,
+    store,
   })
 
   return c.json({

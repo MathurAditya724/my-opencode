@@ -114,6 +114,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     timeoutMs,
     semaphore,
     drainCounter,
+    store,
   })
 
   const app = createApp({

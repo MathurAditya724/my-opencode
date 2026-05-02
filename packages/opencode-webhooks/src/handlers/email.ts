@@ -143,6 +143,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       ...synthetics,
     },
     dispatch,
+    store,
   })
 
   return c.json({
