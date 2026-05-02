@@ -184,6 +184,8 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   // Drop the UNIQUE(delivery_id, trigger_name) constraint so retries
   // can create a new dispatch row for the same delivery+trigger combo.
   // SQLite doesn't support DROP CONSTRAINT, so we recreate the table.
+  // Wrapped in a transaction so a partial failure doesn't leave the DB
+  // without a dispatches table.
   try {
     const hasUnique = db
       .prepare<{ sql: string }, []>(
@@ -191,34 +193,45 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
       )
       .get()
     if (hasUnique?.sql?.includes("UNIQUE(delivery_id, trigger_name)")) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS dispatches_new (
-          id            INTEGER PRIMARY KEY AUTOINCREMENT,
-          delivery_id   TEXT NOT NULL REFERENCES deliveries(delivery_id) ON DELETE CASCADE,
-          trigger_name  TEXT NOT NULL,
-          matched_event TEXT NOT NULL,
-          agent         TEXT NOT NULL,
-          session_id    TEXT,
-          status        TEXT NOT NULL CHECK (status IN ('pending','running','succeeded','failed','timeout')),
-          started_at    INTEGER NOT NULL,
-          completed_at  INTEGER,
-          error         TEXT,
-          entity_key    TEXT,
-          outcome       TEXT,
-          prompt        TEXT
-        );
-        INSERT INTO dispatches_new SELECT id, delivery_id, trigger_name, matched_event,
-          agent, session_id, status, started_at, completed_at, error, entity_key, outcome, prompt
-          FROM dispatches;
-        DROP TABLE dispatches;
-        ALTER TABLE dispatches_new RENAME TO dispatches;
-        CREATE INDEX IF NOT EXISTS idx_dispatches_delivery ON dispatches(delivery_id);
-        CREATE INDEX IF NOT EXISTS idx_dispatches_status   ON dispatches(status);
-        CREATE INDEX IF NOT EXISTS idx_dispatches_started  ON dispatches(started_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_dispatches_entity   ON dispatches(entity_key);
-      `)
+      db.exec("DROP TABLE IF EXISTS dispatches_new")
+      db.exec("BEGIN TRANSACTION")
+      try {
+        db.exec(`
+          CREATE TABLE dispatches_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            delivery_id   TEXT NOT NULL REFERENCES deliveries(delivery_id) ON DELETE CASCADE,
+            trigger_name  TEXT NOT NULL,
+            matched_event TEXT NOT NULL,
+            agent         TEXT NOT NULL,
+            session_id    TEXT,
+            status        TEXT NOT NULL CHECK (status IN ('pending','running','succeeded','failed','timeout')),
+            started_at    INTEGER NOT NULL,
+            completed_at  INTEGER,
+            error         TEXT,
+            entity_key    TEXT,
+            outcome       TEXT,
+            prompt        TEXT
+          );
+          INSERT INTO dispatches_new SELECT id, delivery_id, trigger_name, matched_event,
+            agent, session_id, status, started_at, completed_at, error, entity_key, outcome, prompt
+            FROM dispatches;
+          DROP TABLE dispatches;
+          ALTER TABLE dispatches_new RENAME TO dispatches;
+          CREATE INDEX IF NOT EXISTS idx_dispatches_delivery ON dispatches(delivery_id);
+          CREATE INDEX IF NOT EXISTS idx_dispatches_status   ON dispatches(status);
+          CREATE INDEX IF NOT EXISTS idx_dispatches_started  ON dispatches(started_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_dispatches_entity   ON dispatches(entity_key);
+        `)
+        db.exec("COMMIT")
+        console.log("[opencode-webhooks] migration: dropped UNIQUE constraint on dispatches")
+      } catch (migrationErr) {
+        db.exec("ROLLBACK")
+        console.error("[opencode-webhooks] migration failed, rolled back:", migrationErr)
+      }
     }
-  } catch {}
+  } catch (err) {
+    console.error("[opencode-webhooks] migration check failed:", err)
+  }
 
   const insertStmt = db.prepare<
     void,
