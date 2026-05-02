@@ -4,7 +4,7 @@
 import type { Context } from "hono"
 import type { AppEnv } from "../handler"
 import { verifyGithubSignature } from "../hmac"
-import { readBodyBytes, computeSynthetics } from "../http"
+import { readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
 import { lookupString } from "../template"
 
@@ -63,7 +63,6 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
-  const synthetics = computeSynthetics(payload)
   const { dispatched, skipped } = evaluateAndDispatch({
     triggers,
     event,
@@ -77,7 +76,6 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
       action,
       delivery_id: newDeliveryId,
       payload,
-      ...synthetics,
     },
     dispatch,
     store,

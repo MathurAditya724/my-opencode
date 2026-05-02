@@ -18,7 +18,7 @@ import {
 import { type EmailEvent, identifyEmail } from "../email/identity"
 import { synthesizePayload } from "../email/synthesize"
 import { verifySha256Signature } from "../hmac"
-import { MAX_EMAIL_BODY_BYTES, computeSynthetics, readBodyBytes } from "../http"
+import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
 import { lookupString } from "../template"
 
@@ -127,7 +127,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     lookupString(synth.payload, "review.user.login") ??
     ghSender
 
-  const synthetics = computeSynthetics(synth.payload)
   const { dispatched, skipped } = evaluateAndDispatch({
     triggers,
     event: triggerEvent,
@@ -141,7 +140,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       action: null,
       delivery_id: deliveryId,
       payload: synth.payload,
-      ...synthetics,
     },
     dispatch,
     store,

@@ -1,14 +1,27 @@
 // Per-trigger filters + the shared evaluate-and-dispatch loop used by
-// both the GitHub and email fetch handlers. Filter helpers each return
-// null on match (= proceed) or a string reason on miss (= skip).
+// both the GitHub and email fetch handlers. The agent handles identity
+// gates and payload filtering; the plugin only handles event matching,
+// self-loop guard (ignore_authors), and dispatch.
 
 import type { Dispatcher } from "./dispatch"
 import type { DeliveryStore } from "./storage"
-import { lookup, lookupAll, renderTemplate } from "./template"
+import { renderTemplate } from "./template"
 import type { NormalizedTrigger, SkippedDispatch } from "./types"
 
-// Every enabled trigger matching (event, action) fires. `*` matches
-// any event; null/missing action matches any action.
+// Match an event string against a pattern. Supports exact match, "*"
+// (matches anything), and trailing wildcard like "email.*" (matches
+// any event starting with "email.").
+function eventMatches(pattern: string, event: string): boolean {
+  if (pattern === "*") return true
+  if (pattern === event) return true
+  if (pattern.endsWith(".*")) {
+    const prefix = pattern.slice(0, -1) // "email.*" -> "email."
+    return event.startsWith(prefix)
+  }
+  return false
+}
+
+// Every enabled trigger matching (event, action) fires.
 export function findMatching(
   triggers: NormalizedTrigger[],
   event: string,
@@ -16,59 +29,10 @@ export function findMatching(
 ): NormalizedTrigger[] {
   return triggers.filter((t) => {
     if (t.enabled === false) return false
-    // OR-match across t.events; "*" matches any event.
-    const eventOk = t.events.some((e) => e === "*" || e === event)
+    const eventOk = t.events.some((e) => eventMatches(e, event))
     if (!eventOk) return false
     return t.action === null || t.action === action
   })
-}
-
-// Returns null on match, or a string reason for the first miss.
-export function evaluatePayloadFilter(
-  filter: Record<string, unknown> | undefined,
-  payload: unknown,
-): string | null {
-  if (!filter) return null
-  for (const [path, expected] of Object.entries(filter)) {
-    const actual = lookup(payload, path)
-    if (expected === "*") {
-      // "*" = any present, non-empty value.
-      if (
-        actual === undefined ||
-        actual === null ||
-        actual === "" ||
-        (Array.isArray(actual) && actual.length === 0) ||
-        (typeof actual === "object" &&
-          actual !== null &&
-          Object.keys(actual as object).length === 0)
-      ) {
-        return `payload.${path} is absent/empty`
-      }
-      continue
-    }
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      return `payload.${path} = ${JSON.stringify(actual)} (expected ${JSON.stringify(expected)})`
-    }
-  }
-  return null
-}
-
-// Returns null on match, or a string reason on miss. OR across paths.
-// Fail-closed when bot login is unresolved.
-export function evaluateBotMatch(
-  paths: string[] | undefined,
-  payload: unknown,
-  botLogin: string | null,
-): string | null {
-  if (!paths || paths.length === 0) return null
-  if (!botLogin) return "bot identity unresolved"
-  const lower = botLogin.toLowerCase()
-  for (const path of paths) {
-    for (const v of lookupAll(payload, path)) {
-      if (typeof v === "string" && v.toLowerCase() === lower) return null
-    }
-  }
-  return `none of [${paths.join(", ")}] matched bot login '${botLogin}'`
 }
 
 // Sender filter (self-loop guard). Case-insensitive exact match
@@ -85,9 +49,8 @@ export function evaluateIgnoreAuthors(
   return null
 }
 
-// Run the full per-trigger pipeline (sender → bot-match → payload-shape
-// → template → dispatch) shared by both the GitHub and email handlers.
-// Order is preserved so skip reasons logged downstream stay grep-able.
+// Run the full per-trigger pipeline (sender guard → template → dispatch).
+// The agent itself handles identity gates and payload shape checks.
 export function evaluateAndDispatch(opts: {
   triggers: NormalizedTrigger[]
   event: string
@@ -103,10 +66,7 @@ export function evaluateAndDispatch(opts: {
   const dispatched: string[] = []
   const skipped: SkippedDispatch[] = []
   for (const t of findMatching(opts.triggers, opts.event, opts.action)) {
-    const reason =
-      evaluateIgnoreAuthors(t.ignore_authors, opts.sender) ??
-      evaluateBotMatch(t.require_bot_match, opts.payload, opts.botLogin) ??
-      evaluatePayloadFilter(t.payload_filter, opts.payload)
+    const reason = evaluateIgnoreAuthors(t.ignore_authors, opts.sender)
     if (reason) {
       skipped.push({ name: t.name, reason })
       continue

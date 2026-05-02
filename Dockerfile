@@ -176,17 +176,19 @@ COPY --chown=developer:developer \
      opencode-user-config.json \
      /home/developer/.config/opencode/opencode.json
 
-# Bundled agents (e.g. github-issue-resolver). Copied into the user-level
-# agents dir so they're discoverable from any session, including ones the
-# webhook plugin spawns programmatically.
+# Bundled agent (github-agent). Single unified agent that triages
+# webhook events and loads situation-specific skills on demand.
 COPY --chown=developer:developer agents \
      /home/developer/.config/opencode/agents
 
-# Bundled skills (pr, review, deslop). Each skill lives at
+# Bundled skills. Each skill lives at
 # ~/.config/opencode/skills/<name>/SKILL.md and is auto-discovered by
-# OpenCode's skill tool. The github-issue-resolver agent loads these
-# on demand at the relevant workflow step. Adapted from
-# https://github.com/BYK/dotskills (Apache-2.0).
+# OpenCode's skill tool. The github-agent loads these on demand:
+#   - repo-setup: shared clone/checkout boilerplate
+#   - resolve-issue, review-pr, fix-ci, respond-to-comment, apply-fixes:
+#     situation-specific workflows
+#   - deslop, review, pr: cross-cutting utilities
+# Adapted from https://github.com/BYK/dotskills (Apache-2.0).
 COPY --chown=developer:developer skills \
      /home/developer/.config/opencode/skills
 

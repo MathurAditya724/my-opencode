@@ -11,6 +11,7 @@ export type Trigger = {
   // For source=email:          synthetic event "email.<reason>"
   //                            (e.g. "email.mention", "email.review_requested").
   // Accepts a single event string or an array (OR-matched).
+  // Supports trailing wildcard: "email.*" matches any email.* event.
   event: string | string[]
   action?: string | null        // e.g. "assigned"; null = any action
   agent: string
@@ -20,13 +21,6 @@ export type Trigger = {
   // Skip if payload.sender.login matches any entry (case-insensitive).
   // The literal "$BOT_LOGIN" is substituted with the resolved bot login.
   ignore_authors?: string[]
-  // Payload-shape gate. Dotted paths → expected values. "*" means any
-  // non-empty value; other values are scalar equality. AND across keys.
-  payload_filter?: Record<string, unknown>
-  // Identity gate. Dotted paths whose string value must equal the bot's
-  // resolved login (case-insensitive). OR across paths. Paths support
-  // a `[*]` wildcard for arrays.
-  require_bot_match?: string[]
 }
 
 export type WebhookConfig = {
@@ -50,6 +44,7 @@ export type NormalizedTrigger = Omit<Trigger, "action" | "enabled" | "source" | 
   action: string | null
   enabled: boolean
   // Always normalized to an array so matchers don't need to branch.
+  // Entries may contain trailing wildcards (e.g. "email.*").
   events: string[]
 }
 
