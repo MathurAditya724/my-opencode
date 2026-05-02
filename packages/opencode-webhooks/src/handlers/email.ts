@@ -99,7 +99,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   const dedupKey = `email:${event.message_id}`
 
   // Synthesize BEFORE dedup — gh api fetch is idempotent, and we
-  // need the payload to evaluate payload_filter on the triggers.
+  // need the payload for prompt template rendering.
   const synth = await synthesizePayload(identity, event, reason)
   if (!synth.ok) {
     return c.json({

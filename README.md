@@ -9,7 +9,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`opencode-webhooks`](./packages/opencode-webhooks)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (2 broad triggers covering all GitHub events and email notifications). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/opencode-webhooks/`](./packages/opencode-webhooks) — see its [README](./packages/opencode-webhooks/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
+- **Bundled OpenCode plugin: [`opencode-webhooks`](./packages/opencode-webhooks)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (3 triggers covering all GitHub events and email notifications). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/opencode-webhooks/`](./packages/opencode-webhooks) — see its [README](./packages/opencode-webhooks/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
 - **Bundled agent** (permissions pre-broadened so it doesn't stall on approval prompts):
   - [`github-agent`](./agents/github-agent.md) — unified agent that receives raw webhook payloads, triages the event, and loads situation-specific skills to drive it to completion. Handles the full lifecycle: issue assignment → draft PR → review → CI fix → comment response.
 - **Bundled skills** (loadable on demand by the agent via the `skill` tool):
@@ -72,13 +72,14 @@ deliveries into agent sessions via the in-process SDK client.
 ### Default behavior
 
 The image ships with [`webhooks.json`](./webhooks.json) baked in at
-`~/.config/opencode/webhooks.json`. It defines **2 broad triggers**
+`~/.config/opencode/webhooks.json`. It defines **3 triggers**
 that route all supported GitHub events to the unified `github-agent`:
 
-| Trigger | Events | Agent |
-|---|---|---|
-| `github-event` | `issues`, `pull_request`, `check_suite`, `pull_request_review_comment`, `issue_comment`, `pull_request_review` | `github-agent` |
-| `email-event` | `email.*` (any email notification) | `github-agent` |
+| Trigger | Events | Self-loop guard | Agent |
+|---|---|---|---|
+| `github-event` | `issues`, `pull_request`, `check_suite` | none (bot's own actions should fire) | `github-agent` |
+| `github-comment` | `pull_request_review_comment`, `issue_comment`, `pull_request_review` | `ignore_authors: [$BOT_LOGIN]` | `github-agent` |
+| `email-event` | `email.*` (any email notification) | `ignore_authors: [$BOT_LOGIN]` | `github-agent` |
 
 The agent receives the **raw webhook payload** and decides what to do.
 It runs pre-flight checks (self-loop guard, involvement check) and

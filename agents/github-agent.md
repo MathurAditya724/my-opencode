@@ -52,6 +52,21 @@ situation from this table:
 If the event doesn't match any row, reply with a one-line
 `SKIPPED: unhandled event <event>.<action>` and stop.
 
+### Additional triage filters
+
+- **`issue_comment.created`**: check whether `payload.issue.pull_request`
+  exists. If it does NOT, this is a comment on a plain issue, not a PR.
+  Stop: `SKIPPED: issue comment, not a PR comment`.
+
+- **`pull_request_review.submitted`**: check whether `payload.review.body`
+  is non-empty. If empty (just a state change like approve/dismiss with
+  no text), stop: `SKIPPED: empty review body`.
+
+- **`pull_request_review.submitted`** with `state: approved` and a
+  short body (<=80 chars, no question marks, no code references, no
+  imperative suggestions): this is just a thumbs-up. Stop:
+  `SKIPPED: approval acknowledgement`.
+
 ## Pre-flight checks (run before loading any situation skill)
 
 1. **Self-loop guard.** If `payload.sender.login` equals `$ME`

@@ -2,7 +2,7 @@
 
 OpenCode plugin: receive GitHub webhooks (or Cloudflare-forwarded GitHub notification emails) and dispatch them to OpenCode agent sessions running in the same process.
 
-When a configured webhook arrives, the plugin verifies the HMAC signature, deduplicates by delivery id, runs identity/payload gating, renders a prompt template against the payload, and starts a new OpenCode agent session via the in-process SDK client.
+When a configured webhook arrives, the plugin verifies the HMAC signature, deduplicates by delivery id, applies the self-loop guard (`ignore_authors`), renders a prompt template against the payload, and starts a new OpenCode agent session via the in-process SDK client.
 
 Two ingest sources are supported:
 
@@ -48,12 +48,10 @@ Minimal config:
   "retention": 1000,
   "triggers": [
     {
-      "name": "issue-assigned",
-      "event": "issues",
-      "action": "assigned",
-      "agent": "github-issue-resolver",
-      "require_bot_match": ["assignee.login"],
-      "prompt_template": "Issue assigned: {{ payload.issue.html_url }}\n\n{{ payload.issue.body }}"
+      "name": "github-event",
+      "event": ["issues", "pull_request"],
+      "agent": "github-agent",
+      "prompt_template": "Event: {{ event }}\nAction: {{ action }}\n\nPayload:\n{{ payload }}"
     }
   ]
 }
@@ -80,24 +78,21 @@ Minimal config:
 |---|---|---|
 | `name` | yes | Unique per-config; used in logs. |
 | `source` | no | `"github_webhook"` (default) or `"email"`. Selects which listener path the trigger fires from. |
-| `event` | yes | For `source=github_webhook`: GitHub event header (`issues`, `pull_request`, `*` for any). For `source=email`: synthetic event of the form `email.<reason>` where `<reason>` is the `X-GitHub-Reason` header value (lowercased), e.g. `email.mention`, `email.review_requested`, `email.assign`, `email.comment`. Accepts a single string or an array of strings (OR-matched). |
+| `event` | yes | For `source=github_webhook`: GitHub event header (`issues`, `pull_request`, `*` for any). For `source=email`: synthetic event of the form `email.<reason>` where `<reason>` is the `X-GitHub-Reason` header value (lowercased), e.g. `email.mention`, `email.review_requested`, `email.assign`, `email.comment`. Accepts a single string or an array of strings (OR-matched). Supports trailing wildcards (e.g. `email.*`). |
 | `action` | no | If set, must match `payload.action` exactly. Omit/`null` = any action. Email triggers always have `action=null`. |
 | `agent` | yes | OpenCode agent name to invoke. |
-| `prompt_template` | yes | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths; missing renders empty. Synthetic `{{ review_state }}` is the lowercased `payload.review.state`. |
+| `prompt_template` | yes | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths; missing renders empty. |
 | `cwd` | no | Override session cwd. Falls back to `default_cwd`. |
 | `enabled` | no | Set `false` to disable a trigger without removing it. |
 | `ignore_authors` | no | Skip if `payload.sender.login` matches any entry (case-insensitive). The literal `"$BOT_LOGIN"` is substituted with the resolved bot login. |
-| `payload_filter` | no | Object mapping dotted paths → expected values. `"*"` means any non-empty value; other values are scalar equality. AND across keys. |
-| `require_bot_match` | no | List of dotted payload paths whose string value must equal the bot's resolved login (case-insensitive). Paths support a `[*]` wildcard (e.g. `requested_reviewers[*].login`). OR across paths. Skips with `bot identity unresolved` if `gh api user` failed at boot (fail-closed). |
 
 ## Bot identity
 
 The plugin resolves "the bot" via `gh api user --jq .login` at boot. `gh` reads `GH_TOKEN` from the environment. The resolved login is used for:
 
-- The `require_bot_match` identity gate.
-- The `"$BOT_LOGIN"` placeholder substitution in `ignore_authors`.
+- The `"$BOT_LOGIN"` placeholder substitution in `ignore_authors` (self-loop prevention).
 
-If `gh` isn't installed or `GH_TOKEN` isn't set, identity-gated triggers refuse to fire (fail-closed). Triggers without `require_bot_match` are unaffected.
+If `gh` isn't installed or `GH_TOKEN` isn't set, the `$BOT_LOGIN` placeholder is silently dropped — the self-loop guard is degraded but triggers still fire.
 
 > **Soft dependency.** `gh` is the GitHub CLI: <https://cli.github.com>. Install it on the host running OpenCode.
 

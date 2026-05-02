@@ -22,6 +22,18 @@ Triage a comment on a PR the bot is involved in and respond. The
 - `pull_request_review.submitted` — review body. Fields:
   `payload.review.id`, `payload.review.body`, `payload.review.state`.
 
+## 0. Self-loop guard (defense-in-depth)
+
+Check the comment author against `$ME`:
+
+```sh
+ME=$(gh api user --jq .login)
+```
+
+If the comment author matches `$ME`, stop: `SKIPPED: own comment`.
+This is a defense-in-depth check — the plugin's `ignore_authors`
+should have already filtered this, but check anyway.
+
 ## 1. Triage
 
 Read the comment. Decide:

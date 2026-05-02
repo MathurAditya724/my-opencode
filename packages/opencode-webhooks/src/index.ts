@@ -80,7 +80,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     Sentry.setTag("bot.login", botLogin)
   } else {
     console.warn(
-      `[opencode-webhooks] WARNING: could not resolve bot identity via 'gh api user' — triggers with require_bot_match will be skipped. Set GH_TOKEN to enable identity-gated triggers.`,
+      `[opencode-webhooks] WARNING: could not resolve bot identity via 'gh api user' — $BOT_LOGIN in ignore_authors will not be substituted. Set GH_TOKEN to enable self-loop prevention.`,
     )
   }
 

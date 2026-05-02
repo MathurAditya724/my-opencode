@@ -214,10 +214,10 @@ RUN cd /home/developer/.config/opencode \
  && bun install --frozen-lockfile --production \
  && rm -rf ~/.bun/install/cache
 
-# Default config for the opencode-webhooks plugin: one trigger that wires
-# the `issues.assigned` event to the bundled `github-issue-resolver`
-# agent. The plugin reads this on startup; without it, the listener
-# stays off (no surprise port). Override per-deploy by setting
+# Default config for the opencode-webhooks plugin: 3 broad triggers
+# routing all GitHub events and email notifications to the unified
+# github-agent. The plugin reads this on startup; without it, the
+# listener stays off (no surprise port). Override per-deploy by setting
 # WEBHOOKS_CONFIG to a path on your persistent volume (e.g.
 # ~/dev/.opencode/webhooks.json) and putting your own file there. The
 # HMAC secret is intentionally NOT in this file — set
