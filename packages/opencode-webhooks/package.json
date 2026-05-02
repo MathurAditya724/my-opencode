@@ -17,6 +17,10 @@
     "typecheck": "tsc --noEmit",
     "build": "echo 'opencode-webhooks ships raw TS — no build step needed'"
   },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "@sentry/bun": "^9.0.0"
+  },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.1.1"
   },

@@ -4,6 +4,7 @@
 // just calls dispatch(trigger, prompt, deliveryId).
 
 import type { PluginInput } from "@opencode-ai/plugin"
+import * as Sentry from "@sentry/bun"
 import type { Semaphore, DrainCounter } from "./semaphore"
 import type { NormalizedTrigger } from "./types"
 
@@ -59,6 +60,13 @@ export function makeDispatcher(opts: {
         `[opencode-webhooks] trigger '${t.name}' (${deliveryId}) failed:`,
         err,
       )
+      // withScope (not withIsolationScope) — dispatch runs outside any HTTP request scope
+      Sentry.withScope((scope) => {
+        scope.setTag("trigger.name", t.name)
+        scope.setTag("trigger.event", t.event)
+        scope.setTag("delivery.id", deliveryId)
+        Sentry.captureException(err)
+      })
     } finally {
       clearTimeout(timer)
       semaphore.release()
