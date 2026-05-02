@@ -24,6 +24,17 @@ export type {
 
 export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   console.log("[opencode-webhooks] plugin loading...")
+
+  // OpenCode loads plugins once per project/worktree in the same
+  // process. Only the first invocation should start Bun.serve;
+  // subsequent ones skip to avoid EADDRINUSE.
+  const g = globalThis as { __webhookServerStarted?: boolean }
+  if (g.__webhookServerStarted) {
+    console.log("[opencode-webhooks] server already running, skipping duplicate init")
+    return {}
+  }
+  g.__webhookServerStarted = true
+
   try {
     if (typeof Bun === "undefined") {
       throw new Error(
@@ -176,6 +187,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
 
     return {}
   } catch (err) {
+    g.__webhookServerStarted = false
     console.error("[opencode-webhooks] FATAL: plugin failed to start:", err)
     throw err
   }
