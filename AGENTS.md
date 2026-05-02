@@ -68,5 +68,5 @@
 ### Pattern
 
 <!-- lore:019de622-bdfa-7267-9101-3c11dceb04e1 -->
-* **Dispatch errors reported to Sentry with trigger/delivery tags via withScope**: In \`dispatch.ts\`, the catch block wraps \`Sentry.captureException(err)\` in \`Sentry.withScope()\` to attach \`trigger.name\`, \`trigger.event\`, and \`delivery.id\` tags scoped only to that error event. This avoids polluting the isolation scope of concurrent requests. Pattern: \`Sentry.withScope(scope => { scope.setTag(...); Sentry.captureException(err) })\`.
+* **Dispatch errors reported to Sentry with trigger/delivery tags via withScope**: In \`pipeline.ts\`, the catch block wraps \`Sentry.captureException(err)\` in \`Sentry.withScope()\` to attach \`trigger.name\`, \`trigger.event\`, and \`delivery.id\` tags scoped only to that error event. This avoids polluting the isolation scope of concurrent requests. Pattern: \`Sentry.withScope(scope => { scope.setTag(...); Sentry.captureException(err) })\`.
 <!-- End lore-managed section -->

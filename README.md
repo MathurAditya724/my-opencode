@@ -56,7 +56,7 @@ See [`.env.example`](./.env.example) for the full template.
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
-| `GH_TOKEN` | For the bundled `gh` CLI **and** the `opencode-webhooks` plugin's identity-gated triggers. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin runs `gh api user --jq .login` at boot to resolve the bot's GitHub identity; without `GH_TOKEN`, identity-gated triggers fail closed. |
+| `GH_TOKEN` | For the bundled `gh` CLI and the `opencode-webhooks` plugin's bot identity resolution. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin resolves the bot's login at boot for self-loop prevention (`$BOT_LOGIN` substitution); without `GH_TOKEN`, self-loop prevention is degraded. |
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `opencode-webhooks` plugin. Required to receive webhooks. |
 | `WEBHOOK_PORT`, `WEBHOOKS_CONFIG` | Optional plugin tuning. See [`.env.example`](./.env.example). |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
@@ -119,7 +119,7 @@ automatically. No further setup needed.
 
 Self-loop prevention works at two levels:
 
-1. **Plugin level** — both triggers use `ignore_authors: ["$BOT_LOGIN"]`.
+1. **Plugin level** — the comment and email triggers use `ignore_authors: ["$BOT_LOGIN"]`.
    The plugin substitutes `$BOT_LOGIN` with the bot login auto-resolved
    at boot via `gh api user`. This prevents the bot's own webhook
    activity (e.g., opening a PR, posting a comment) from re-triggering

@@ -103,7 +103,7 @@ If `gh` isn't installed or `GH_TOKEN` isn't set, the `$BOT_LOGIN` placeholder is
 |---|---|
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret for `X-Hub-Signature-256` verification on `/webhooks/github`. Same value you set in GitHub's webhook config. |
 | `EMAIL_WEBHOOK_SECRET` | Shared HMAC secret with the Cloudflare email worker, verified against `X-Email-Signature-256` on `/webhooks/email`. |
-| `GH_TOKEN` | GitHub PAT, read by `gh` CLI for `gh api user` and for synthesizing email payloads via `gh api`. Required for identity-gated triggers and all email triggers. |
+| `GH_TOKEN` | GitHub PAT, read by `gh` CLI for `gh api user` (bot identity for `$BOT_LOGIN` substitution) and for synthesizing email payloads via `gh api`. Required for self-loop prevention and all email triggers. |
 | `WEBHOOK_PORT` | Override listener port (default 5050). |
 | `WEBHOOKS_CONFIG` | Path to `webhooks.json` (default `~/.config/opencode/webhooks.json`). |
 | `SENTRY_DSN` | Sentry DSN for error tracking. If set, `Sentry.init()` is called at plugin startup and unhandled rejections are captured. |

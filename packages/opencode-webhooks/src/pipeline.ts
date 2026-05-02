@@ -10,7 +10,7 @@
 //      follow-up prompt.
 //
 // Events without a recognizable entity key (e.g. push events with no
-// associated PR) fall through to the old fire-and-forget dispatch path.
+// associated PR) fall through to one-shot fire-and-forget dispatch.
 
 import type { PluginInput } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
@@ -31,18 +31,18 @@ type SessionEntry = {
   sessionId: string
   entityKey: string
   agent: string
-  // True while a session.prompt call is in flight. Incoming events
-  // during this window are queued rather than sent immediately.
   busy: boolean
   queue: QueuedEvent[]
   abort: AbortController
-  timer: ReturnType<typeof setTimeout>
+  // Abort timer — fires after timeoutMs to cancel the session.
+  abortTimer: ReturnType<typeof setTimeout>
+  // Batch timer — fires after batchWindowMs to flush queued events.
+  batchTimer: ReturnType<typeof setTimeout> | null
+  // Idle timer — fires after idleTimeoutMs to clean up the session.
+  idleTimer: ReturnType<typeof setTimeout> | null
 }
 
 export type Pipeline = {
-  // Try to dispatch via session affinity. Returns true if the event
-  // was handled (dispatched or queued); false if no entity key could
-  // be extracted and the caller should fall back to fire-and-forget.
   dispatch(
     entityKey: EntityKey,
     trigger: NormalizedTrigger,
@@ -51,7 +51,6 @@ export type Pipeline = {
     matchedEvent: string,
     dispatchId: number,
   ): boolean
-  // Fire-and-forget dispatch for events without entity keys.
   dispatchNoAffinity(
     trigger: NormalizedTrigger,
     prompt: string,
@@ -59,9 +58,11 @@ export type Pipeline = {
     matchedEvent: string,
     dispatchId: number,
   ): void
-  // Lookup the active session id for an entity. Used by the read API.
   getSessionId(entityKey: string): string | null
 }
+
+// Idle sessions are cleaned up after this period of inactivity.
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 
 export function makePipeline(opts: {
   client: PluginInput["client"]
@@ -70,8 +71,6 @@ export function makePipeline(opts: {
   semaphore: Semaphore
   drainCounter: DrainCounter
   store: DeliveryStore
-  // How long to wait for additional events before flushing the queue
-  // as a batched follow-up. Default 5s.
   batchWindowMs?: number
 }): Pipeline {
   const {
@@ -84,10 +83,30 @@ export function makePipeline(opts: {
     batchWindowMs = 5_000,
   } = opts
 
-  // In-memory registry: entity_key → active session.
   const sessions = new Map<string, SessionEntry>()
 
-  // Create a new OpenCode session and send the initial prompt.
+  // Clean up a session: clear timers, remove from map, end drain counter.
+  function cleanup(entry: SessionEntry): void {
+    clearTimeout(entry.abortTimer)
+    if (entry.batchTimer) clearTimeout(entry.batchTimer)
+    if (entry.idleTimer) clearTimeout(entry.idleTimer)
+    sessions.delete(entry.entityKey)
+    drainCounter.end()
+  }
+
+  // Start (or restart) the idle timer. When it fires, the session is
+  // removed from the registry and subsequent events create a new one.
+  function resetIdleTimer(entry: SessionEntry): void {
+    if (entry.idleTimer) clearTimeout(entry.idleTimer)
+    entry.idleTimer = setTimeout(() => {
+      console.log(
+        `[pipeline] ${entry.entityKey} → session ${entry.sessionId} idle timeout, cleaning up`,
+      )
+      cleanup(entry)
+    }, IDLE_TIMEOUT_MS)
+    entry.idleTimer.unref?.()
+  }
+
   async function createAndPrompt(
     entry: SessionEntry,
     trigger: NormalizedTrigger,
@@ -107,19 +126,15 @@ export function makePipeline(opts: {
       const sessionId = session.data?.id
       if (!sessionId) {
         const msg = "session.create returned no id"
-        console.error(
-          `[pipeline] ${entry.entityKey}: ${msg}`,
-        )
+        console.error(`[pipeline] ${entry.entityKey}: ${msg}`)
         store.markFailed(dispatchId, msg)
-        sessions.delete(entry.entityKey)
+        cleanup(entry)
         return
       }
       entry.sessionId = sessionId
       store.markRunning(dispatchId, sessionId)
       store.bindSession(entry.entityKey, sessionId)
-      console.log(
-        `[pipeline] ${entry.entityKey} → new session ${sessionId}`,
-      )
+      console.log(`[pipeline] ${entry.entityKey} → new session ${sessionId}`)
       entry.busy = true
       await client.session.prompt({
         path: { id: sessionId },
@@ -138,29 +153,25 @@ export function makePipeline(opts: {
       return
     } finally {
       semaphore.release()
-      // Don't decrement drainCounter yet — there may be queued events.
     }
     entry.busy = false
     flushQueue(entry)
   }
 
-  // Send a follow-up prompt to an existing session.
   async function followUp(
     entry: SessionEntry,
     events: QueuedEvent[],
   ): Promise<void> {
     if (events.length === 0) return
-    // Build a single batched prompt from all queued events.
     const prompt = events.length === 1
       ? events[0].prompt
       : formatBatchPrompt(events)
 
     entry.busy = true
-    const firstDispatchId = events[0].dispatchId
-    // Mark all queued dispatches as running in the existing session.
     for (const e of events) {
       store.markRunning(e.dispatchId, entry.sessionId)
     }
+    await semaphore.acquire()
     try {
       await client.session.prompt({
         path: { id: entry.sessionId },
@@ -178,35 +189,38 @@ export function makePipeline(opts: {
       )
     } catch (err) {
       for (const e of events) {
-        const aborted = entry.abort.signal.aborted
-        if (aborted) {
+        if (entry.abort.signal.aborted) {
           store.markTimeout(e.dispatchId)
         } else {
           store.markFailed(e.dispatchId, formatError(err))
         }
       }
       reportError(entry, err, events[0].deliveryId, events[0].matchedEvent, events[0].trigger)
-      sessions.delete(entry.entityKey)
-      drainCounter.end()
+      // Fail any remaining queued events.
+      for (const q of entry.queue) {
+        store.markFailed(q.dispatchId, `session failed: ${formatError(err)}`)
+      }
+      entry.queue.length = 0
+      cleanup(entry)
       return
+    } finally {
+      semaphore.release()
     }
     entry.busy = false
     flushQueue(entry)
   }
 
-  // Drain the queue. If the queue is empty, mark the session as idle.
-  // If new events accumulated while the previous prompt was running,
-  // batch them into a single follow-up after a short window to allow
-  // more events to coalesce.
   function flushQueue(entry: SessionEntry): void {
     if (entry.queue.length === 0) {
-      // Session is idle. Keep it registered for future events.
-      // Drain counter was started when session was created; it
-      // stays active until the session is cleaned up or times out.
+      // Session is idle. Start the idle timer — if no new events arrive
+      // before it fires, the session is cleaned up.
+      resetIdleTimer(entry)
       return
     }
-    // Wait briefly to batch any additional events that arrive.
-    setTimeout(() => {
+    // Wait briefly to batch additional events that arrive in quick
+    // succession (e.g. CI failure + review comment from the same push).
+    entry.batchTimer = setTimeout(() => {
+      entry.batchTimer = null
       const batch = entry.queue.splice(0)
       if (batch.length === 0) return
       void followUp(entry, batch)
@@ -221,20 +235,17 @@ export function makePipeline(opts: {
     matchedEvent: string,
     trigger: NormalizedTrigger,
   ): void {
-    const aborted = entry.abort.signal.aborted
-    if (aborted) {
+    if (entry.abort.signal.aborted) {
       store.markTimeout(dispatchId)
     } else {
       store.markFailed(dispatchId, formatError(err))
     }
     reportError(entry, err, deliveryId, matchedEvent, trigger)
-    // Fail any queued events too.
     for (const q of entry.queue) {
       store.markFailed(q.dispatchId, `session failed: ${formatError(err)}`)
     }
     entry.queue.length = 0
-    sessions.delete(entry.entityKey)
-    drainCounter.end()
+    cleanup(entry)
   }
 
   function reportError(
@@ -244,9 +255,8 @@ export function makePipeline(opts: {
     matchedEvent: string,
     trigger: NormalizedTrigger,
   ): void {
-    const aborted = entry.abort.signal.aborted
     console.error(
-      `[pipeline] ${entry.entityKey} → session ${entry.sessionId} ${aborted ? "timed out" : "failed"}:`,
+      `[pipeline] ${entry.entityKey} → session ${entry.sessionId} ${entry.abort.signal.aborted ? "timed out" : "failed"}:`,
       err,
     )
     Sentry.withScope((scope) => {
@@ -259,9 +269,8 @@ export function makePipeline(opts: {
     })
   }
 
-  // Fire-and-forget for events without entity affinity — same as the
-  // old dispatcher behavior.
-  async function dispatchNoAffinity(
+  // One-shot dispatch for events without entity affinity.
+  async function fireAndForget(
     trigger: NormalizedTrigger,
     prompt: string,
     deliveryId: string,
@@ -317,37 +326,32 @@ export function makePipeline(opts: {
     dispatch(entityKey, trigger, prompt, deliveryId, matchedEvent, dispatchId) {
       const existing = sessions.get(entityKey.key)
       if (existing) {
+        // Cancel idle timer — this session is active again.
+        if (existing.idleTimer) {
+          clearTimeout(existing.idleTimer)
+          existing.idleTimer = null
+        }
         if (existing.busy) {
           // Session is processing a prompt — queue the event.
           existing.queue.push({
-            trigger,
-            prompt,
-            deliveryId,
-            matchedEvent,
-            dispatchId,
+            trigger, prompt, deliveryId, matchedEvent, dispatchId,
           })
-          store.markRunning(dispatchId, existing.sessionId)
           console.log(
             `[pipeline] ${entityKey.key} → queued (session ${existing.sessionId} busy, queue depth: ${existing.queue.length})`,
           )
           return true
         }
         // Session is idle — send follow-up immediately.
-        store.markRunning(dispatchId, existing.sessionId)
         void followUp(existing, [{
-          trigger,
-          prompt,
-          deliveryId,
-          matchedEvent,
-          dispatchId,
+          trigger, prompt, deliveryId, matchedEvent, dispatchId,
         }])
         return true
       }
 
       // No existing session — create one.
       const abort = new AbortController()
-      const timer = setTimeout(() => abort.abort(), timeoutMs)
-      timer.unref?.()
+      const abortTimer = setTimeout(() => abort.abort(), timeoutMs)
+      abortTimer.unref?.()
       const entry: SessionEntry = {
         sessionId: "",
         entityKey: entityKey.key,
@@ -355,7 +359,9 @@ export function makePipeline(opts: {
         busy: false,
         queue: [],
         abort,
-        timer,
+        abortTimer,
+        batchTimer: null,
+        idleTimer: null,
       }
       sessions.set(entityKey.key, entry)
       void createAndPrompt(entry, trigger, prompt, deliveryId, matchedEvent, dispatchId)
@@ -363,7 +369,7 @@ export function makePipeline(opts: {
     },
 
     dispatchNoAffinity(trigger, prompt, deliveryId, matchedEvent, dispatchId) {
-      void dispatchNoAffinity(trigger, prompt, deliveryId, matchedEvent, dispatchId)
+      void fireAndForget(trigger, prompt, deliveryId, matchedEvent, dispatchId)
     },
 
     getSessionId(entityKey) {
