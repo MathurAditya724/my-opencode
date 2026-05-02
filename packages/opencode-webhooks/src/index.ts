@@ -34,6 +34,13 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   if (sentryDsn) {
     Sentry.init({
       dsn: sentryDsn,
+      // Capture request headers / IP for debugging.
+      sendDefaultPii: true,
+      // Default to 10% of requests traced in production. Override via
+      // SENTRY_TRACES_SAMPLE_RATE env var (0.0–1.0).
+      tracesSampleRate: Number(
+        process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1",
+      ),
     })
     console.log("[opencode-webhooks] Sentry initialized")
   }
@@ -67,6 +74,9 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   const botLogin = await resolveBotLogin()
   if (botLogin) {
     console.log(`[opencode-webhooks] bot identity: ${botLogin}`)
+    // Tag all Sentry events with the bot login so errors are
+    // attributable to the right deployment.
+    Sentry.setTag("bot.login", botLogin)
   } else {
     console.warn(
       `[opencode-webhooks] WARNING: could not resolve bot identity via 'gh api user' — triggers with require_bot_match will be skipped. Set GH_TOKEN to enable identity-gated triggers.`,
