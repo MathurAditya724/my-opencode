@@ -80,7 +80,7 @@ Minimal config:
 |---|---|---|
 | `name` | yes | Unique per-config; used in logs. |
 | `source` | no | `"github_webhook"` (default) or `"email"`. Selects which listener path the trigger fires from. |
-| `event` | yes | For `source=github_webhook`: GitHub event header (`issues`, `pull_request`, `*` for any). For `source=email`: synthetic event of the form `email.<reason>` where `<reason>` is the `X-GitHub-Reason` header value (lowercased), e.g. `email.mention`, `email.review_requested`, `email.assign`, `email.comment`. |
+| `event` | yes | For `source=github_webhook`: GitHub event header (`issues`, `pull_request`, `*` for any). For `source=email`: synthetic event of the form `email.<reason>` where `<reason>` is the `X-GitHub-Reason` header value (lowercased), e.g. `email.mention`, `email.review_requested`, `email.assign`, `email.comment`. Accepts a single string or an array of strings (OR-matched). |
 | `action` | no | If set, must match `payload.action` exactly. Omit/`null` = any action. Email triggers always have `action=null`. |
 | `agent` | yes | OpenCode agent name to invoke. |
 | `prompt_template` | yes | Mustache-ish template. `{{ payload.foo.bar }}` looks up paths; missing renders empty. Synthetic `{{ review_state }}` is the lowercased `payload.review.state`. |

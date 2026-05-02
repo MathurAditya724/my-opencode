@@ -15,7 +15,8 @@ export function findMatching(
 ): NormalizedTrigger[] {
   return triggers.filter((t) => {
     if (t.enabled === false) return false
-    const eventOk = t.event === "*" || t.event === event
+    // OR-match across t.events; "*" matches any event.
+    const eventOk = t.events.some((e) => e === "*" || e === event)
     if (!eventOk) return false
     return t.action === null || t.action === action
   })
@@ -109,7 +110,7 @@ export function evaluateAndDispatch(opts: {
       continue
     }
     const prompt = renderTemplate(t.prompt_template, opts.templateContext)
-    void opts.dispatch(t, prompt, opts.deliveryId)
+    void opts.dispatch(t, prompt, opts.deliveryId, opts.event)
     dispatched.push(t.name)
   }
   return { dispatched, skipped }

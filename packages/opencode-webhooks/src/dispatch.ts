@@ -12,6 +12,10 @@ export type Dispatcher = (
   trigger: NormalizedTrigger,
   prompt: string,
   deliveryId: string,
+  // The actual event that matched (for triggers with event arrays,
+  // this is the specific event from the inbound request, not the
+  // configured array).
+  matchedEvent: string,
 ) => Promise<void>
 
 export function makeDispatcher(opts: {
@@ -22,7 +26,7 @@ export function makeDispatcher(opts: {
   drainCounter: DrainCounter
 }): Dispatcher {
   const { client, defaultCwd, timeoutMs, semaphore, drainCounter } = opts
-  return async function dispatch(t, prompt, deliveryId) {
+  return async function dispatch(t, prompt, deliveryId, matchedEvent) {
     drainCounter.start()
     await semaphore.acquire()
     const abort = new AbortController()
@@ -30,7 +34,7 @@ export function makeDispatcher(opts: {
     timer.unref?.() // don't block process exit on a 30-min timer
     try {
       const session = await client.session.create({
-        body: { title: `[webhook/${t.name}] ${t.event}` },
+        body: { title: `[webhook/${t.name}] ${matchedEvent}` },
         query: { directory: t.cwd ?? defaultCwd },
         signal: abort.signal,
       })
@@ -63,7 +67,7 @@ export function makeDispatcher(opts: {
       // withScope (not withIsolationScope) — dispatch runs outside any HTTP request scope
       Sentry.withScope((scope) => {
         scope.setTag("trigger.name", t.name)
-        scope.setTag("trigger.event", t.event)
+        scope.setTag("trigger.event", matchedEvent)
         scope.setTag("delivery.id", deliveryId)
         Sentry.captureException(err)
       })
