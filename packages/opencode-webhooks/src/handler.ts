@@ -1,40 +1,19 @@
-// Hono app for the plugin's HTTP listener. Routes: healthz, delivery
-// read endpoints, entity/stats API, dashboard pages, and one webhook
-// ingest per source -- sharing the same store, pipeline, and trigger
-// config. Per-route logic lives under ./handlers/.
-//
-// Triggers are split by `source` here once so the handlers don't need
-// to know about other ingest paths.
+// Hono app for the plugin's HTTP listener. Routes: healthz and webhook
+// ingest (one per source). Per-route logic lives under ./handlers/.
 
-import { Hono, type Context } from "hono"
+import { Hono } from "hono"
 import * as Sentry from "@sentry/bun"
-import {
-  getDeliveryHandler,
-  listDeliveriesHandler,
-} from "./handlers/deliveries"
-import {
-  listEntitiesHandler,
-  getEntityHandler,
-  getStatsHandler,
-  retryDispatchHandler,
-  dashboardRetryHandler,
-} from "./handlers/entities"
-import {
-  dashboardOverviewHandler,
-  dashboardEntityHandler,
-} from "./handlers/dashboard"
+import type { Dedup } from "./dedup"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
 import type { Pipeline } from "./pipeline"
-import type { DeliveryStore } from "./storage"
 import type { NormalizedTrigger } from "./types"
 
 export type AppEnv = {
   Variables: {
     secret: string
     emailSecret: string
-    store: DeliveryStore
-    retention: number
+    dedup: Dedup
     pipeline: Pipeline
     botLogin: string | null
     githubTriggers: NormalizedTrigger[]
@@ -46,8 +25,7 @@ export function createApp(opts: {
   secret: string
   emailSecret: string
   triggers: NormalizedTrigger[]
-  store: DeliveryStore
-  retention: number
+  dedup: Dedup
   pipeline: Pipeline
   botLogin: string | null
 }): Hono<AppEnv> {
@@ -103,56 +81,11 @@ export function createApp(opts: {
     })
   })
 
-  // Inject store for read-only routes (deliveries, entities, stats, dashboard).
-  const storeMiddleware = async (c: Context<AppEnv>, next: () => Promise<void>) => {
-    c.set("store", opts.store)
-    await next()
-  }
-
-  // --- JSON API routes ---
-
-  app.use("/deliveries", storeMiddleware)
-  app.use("/deliveries/*", storeMiddleware)
-  app.get("/deliveries", listDeliveriesHandler)
-  app.get("/deliveries/:id", getDeliveryHandler)
-
-  // Inject store + pipeline for API routes that need dispatch capabilities.
-  const dispatchMiddleware = async (c: Context<AppEnv>, next: () => Promise<void>) => {
-    c.set("store", opts.store)
-    c.set("pipeline", opts.pipeline)
-    await next()
-  }
-
-  app.use("/api/*", storeMiddleware)
-  app.get("/api/entities", listEntitiesHandler)
-  app.get("/api/entities/:key", getEntityHandler)
-  app.get("/api/stats", getStatsHandler)
-
-  app.use("/api/dispatches/*", dispatchMiddleware)
-  app.post("/api/dispatches/:id/retry", retryDispatchHandler)
-
-  // --- Dashboard pages (server-rendered HTML) ---
-
-  app.use("/dashboard", storeMiddleware)
-  app.use("/dashboard/*", storeMiddleware)
-  app.get("/dashboard", dashboardOverviewHandler)
-  app.get("/dashboard/entities", (c) => c.redirect("/dashboard"))
-  app.get("/dashboard/entities/:key", dashboardEntityHandler)
-
-  // Dashboard retry: POST form action that retries and redirects back.
-  app.use("/dashboard/dispatches/*", dispatchMiddleware)
-  app.post("/dashboard/dispatches/:id/retry", dashboardRetryHandler)
-
-  // Redirect root to dashboard for convenience.
-  app.get("/", (c) => c.redirect("/dashboard"))
-
-  // --- Webhook ingest routes ---
-
+  // Webhook ingest routes.
   app.use("/webhooks/*", async (c, next) => {
     c.set("secret", opts.secret)
     c.set("emailSecret", opts.emailSecret)
-    c.set("store", opts.store)
-    c.set("retention", opts.retention)
+    c.set("dedup", opts.dedup)
     c.set("pipeline", opts.pipeline)
     c.set("botLogin", opts.botLogin)
     c.set("githubTriggers", githubTriggers)

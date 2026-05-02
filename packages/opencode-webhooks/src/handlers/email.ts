@@ -4,10 +4,10 @@
 //
 // This handler is intentionally simple: verify HMAC, dedup by
 // message_id, and pass the full email content to the agent. The agent
-// decides what to do -- whether it's a GitHub notification, a Sentry
-// alert, a forwarded bug report, or anything else.
+// decides what to do.
 
 import type { Context } from "hono"
+import * as Sentry from "@sentry/bun"
 import type { AppEnv } from "../handler"
 import { verifySha256Signature } from "../hmac"
 import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
@@ -30,8 +30,7 @@ export type EmailEvent = {
 export async function emailWebhookHandler(c: Context<AppEnv>) {
   const emailSecret = c.get("emailSecret")
   const triggers = c.get("emailTriggers")
-  const store = c.get("store")
-  const retention = c.get("retention")
+  const dedup = c.get("dedup")
   const pipeline = c.get("pipeline")
   const botLogin = c.get("botLogin")
 
@@ -79,14 +78,8 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
-  const reason = (event.x_github_reason ?? "forwarded").toLowerCase()
-  const triggerEvent = `email.${reason}`
   const dedupKey = `email:${event.message_id}`
-
-  // Dedup by Message-ID.
-  const deliveryId = store.insert(dedupKey, triggerEvent, null)
-  if (deliveryId) store.trim(retention)
-  if (!deliveryId) {
+  if (dedup.seen(dedupKey)) {
     return c.json({
       ok: true,
       message_id: event.message_id,
@@ -95,7 +88,22 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
-  // Build the payload the agent will see -- the full email content.
+  const reason = (event.x_github_reason ?? "forwarded").toLowerCase()
+  const triggerEvent = `email.${reason}`
+  const deliveryId = crypto.randomUUID()
+
+  Sentry.logger.info("webhook.received", {
+    source: "email",
+    event: triggerEvent,
+    delivery_id: deliveryId,
+    from: event.from,
+    to: event.to,
+    subject: event.subject,
+    message_id: event.message_id,
+    x_github_reason: event.x_github_reason ?? "",
+    x_github_sender: event.x_github_sender ?? "",
+  })
+
   const emailPayload = {
     from: event.from,
     to: event.to,
@@ -125,7 +133,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       payload: emailPayload,
     },
     pipeline,
-    store,
   })
 
   return c.json({

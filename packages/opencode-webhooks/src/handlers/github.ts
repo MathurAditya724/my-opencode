@@ -2,6 +2,7 @@
 // X-GitHub-Delivery, runs the trigger pipeline, and dispatches.
 
 import type { Context } from "hono"
+import * as Sentry from "@sentry/bun"
 import type { AppEnv } from "../handler"
 import { verifyGithubSignature } from "../hmac"
 import { readBodyBytes } from "../http"
@@ -11,8 +12,7 @@ import { lookupString } from "../template"
 export async function githubWebhookHandler(c: Context<AppEnv>) {
   const secret = c.get("secret")
   const triggers = c.get("githubTriggers")
-  const store = c.get("store")
-  const retention = c.get("retention")
+  const dedup = c.get("dedup")
   const pipeline = c.get("pipeline")
   const botLogin = c.get("botLogin")
 
@@ -20,7 +20,6 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "no HMAC secret configured on server" }, 503)
   }
 
-  // GitHub always sends both headers; refuse otherwise.
   const event = c.req.header("x-github-event")
   const deliveryId = c.req.header("x-github-delivery")
   if (!event || !deliveryId) {
@@ -46,22 +45,21 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     const a = (payload as { action?: unknown }).action
     if (typeof a === "string") action = a
   } catch {
-    // Not JSON — dispatch with empty payload.
+    // Not JSON -- dispatch with empty payload.
   }
 
-  // Idempotency: dedup by X-GitHub-Delivery. insert() returns a UUID
-  // delivery_id on success, or null if the external key already exists.
-  const externalId = deliveryId
-  const newDeliveryId = store.insert(externalId, event, action)
-  if (newDeliveryId) store.trim(retention)
-  if (!newDeliveryId) {
-    return c.json({
-      ok: true,
-      external_id: externalId,
-      duplicate: true,
-      dispatched: [],
-    })
+  if (dedup.seen(deliveryId)) {
+    return c.json({ ok: true, delivery_id: deliveryId, duplicate: true, dispatched: [] })
   }
+
+  Sentry.logger.info("webhook.received", {
+    source: "github",
+    event,
+    action: action ?? "",
+    delivery_id: deliveryId,
+    sender: lookupString(payload, "sender.login") ?? "",
+    repo: lookupString(payload, "repository.full_name") ?? "",
+  })
 
   const { dispatched, skipped } = evaluateAndDispatch({
     triggers,
@@ -70,21 +68,19 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     payload,
     sender: lookupString(payload, "sender.login"),
     botLogin,
-    deliveryId: newDeliveryId,
+    deliveryId,
     templateContext: {
       event,
       action,
-      delivery_id: newDeliveryId,
+      delivery_id: deliveryId,
       payload,
     },
     pipeline,
-    store,
   })
 
   return c.json({
     ok: true,
-    delivery_id: newDeliveryId,
-    external_id: externalId,
+    delivery_id: deliveryId,
     event,
     action,
     duplicate: false,
