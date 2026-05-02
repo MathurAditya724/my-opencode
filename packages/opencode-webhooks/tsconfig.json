@@ -9,6 +9,8 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
     "types": ["bun"]
   },
   "include": ["src/**/*"]

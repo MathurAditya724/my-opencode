@@ -71,6 +71,9 @@
 <!-- lore:019de760-ce78-7851-8d57-63ebcf5884c4 -->
 * **Queued pipeline events must stay 'pending' until followUp() sends the prompt**: When a new event arrives for a busy session in \`pipeline.ts\`, it's added to \`entry.queue\`. Mark its dispatch row \`pending\` (already the default from \`store.createDispatch\`). Only call \`store.markRunning(e.dispatchId, sessionId)\` inside \`followUp()\` when the batched prompt is actually sent. Marking it \`running\` at enqueue time misreports status to the delivery read API.
 
+<!-- lore:019de984-4bcd-7f21-acb9-384550d3fb3c -->
+* **Railway PORT env causes OpenCode/webhook port conflict**: Railway sets \`PORT\` env var and routes all external traffic to it (default 5050). If OpenCode CMD uses \`--port ${PORT:-4096}\`, it binds to 5050. If the webhook plugin also defaults to 5050, both compete for the same port → crash → 502. Fix: hardcode OpenCode to \`--port 4096\` (internal only); let the plugin bind to \`PORT\` env var (via \`WEBHOOK\_PORT\` fallback) so it gets 5050 which Railway routes to. \`EXPOSE 4096 5050\` in Dockerfile is documentation only — Railway ignores it.
+
 <!-- lore:019ddf82-a571-7ee4-ad93-8e3039df4ea8 -->
 * **Sidecar cold-boot race: opencode not ready when first webhook arrives**: Cold-boot race is eliminated when using a plugin architecture: the plugin starts after OpenCode's server is ready (it's loaded during server init, not in parallel). The race only applies to the sidecar pattern (separate process). If using a plugin with its own \`Bun.serve\` listener, no readiness polling or retry logic is needed.
 
