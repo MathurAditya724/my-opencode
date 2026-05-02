@@ -13,13 +13,19 @@ export type EntityKey = {
   kind: "issue" | "pull_request"
 }
 
-// Extract entity key from a GitHub webhook or synthesized email payload.
-// Returns null if the payload doesn't map to a trackable entity (e.g.
-// a push event with no associated PR).
+// Extract entity key from a GitHub webhook payload.
+// Returns null for email events (raw email content, no entity structure)
+// and for webhook events that don't map to a trackable entity.
 export function extractEntityKey(
   event: string,
   payload: unknown,
 ): EntityKey | null {
+  // Email events carry raw email content -- no entity to extract.
+  // The agent decides what to do with the email.
+  if (event.startsWith("email.")) {
+    return null
+  }
+
   const repo = lookupString(payload, "repository.full_name")
   if (!repo) return null
 
@@ -59,7 +65,7 @@ export function extractEntityKey(
     return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
   }
 
-  // check_suite.* — extract from pull_requests array
+  // check_suite.* -- extract from pull_requests array
   if (event === "check_suite") {
     const prs = lookup(payload, "check_suite.pull_requests")
     if (!Array.isArray(prs) || prs.length === 0) return null
@@ -67,27 +73,6 @@ export function extractEntityKey(
     const num = first?.number
     if (typeof num !== "number") return null
     return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
-  }
-
-  // email.* events — synthesized payload has the same shape as real
-  // webhook payloads (issue or pull_request at top level)
-  if (event.startsWith("email.")) {
-    const issueNum = lookup(payload, "issue.number")
-    if (typeof issueNum === "number") {
-      const isPR = lookup(payload, "pull_request") != null
-        || lookup(payload, "issue.pull_request") != null
-      return {
-        key: `${repo}#${issueNum}`,
-        repo,
-        number: issueNum,
-        kind: isPR ? "pull_request" : "issue",
-      }
-    }
-    const prNum = lookup(payload, "pull_request.number")
-    if (typeof prNum === "number") {
-      return { key: `${repo}#${prNum}`, repo, number: prNum, kind: "pull_request" }
-    }
-    return null
   }
 
   return null

@@ -4,14 +4,11 @@
 //   1. If sender != FORWARD_TO: message.forward(FORWARD_TO). Skipped
 //      when the sender IS the FORWARD_TO address to prevent a loop.
 //   2. If message.from is in ALLOWED_SENDERS or matches FORWARD_TO,
-//      build a small JSON event from the headers we care about,
-//      HMAC-sign it, and POST to WEBHOOK_URL.
+//      read the raw RFC822 message, extract plain-text and HTML body
+//      parts, build a JSON event with headers + body, HMAC-sign it,
+//      and POST to WEBHOOK_URL.
 //   3. On 5xx from the webhook, throw so Cloudflare retries the email.
-//      4xx is permanent (signature rejected, dedup hit, etc.) — accept.
-//
-// All RFC822 parsing stays out of the worker: the plugin already has
-// gh-api access for canonical state, and Cloudflare hands us a parsed
-// `message.headers` so we don't need to re-implement header decoding.
+//      4xx is permanent (signature rejected, dedup hit, etc.) -- accept.
 
 // Sender allowlist for the webhook gate. Strings starting and ending
 // with "/" are treated as case-insensitive regex; everything else is
@@ -48,10 +45,8 @@ export default {
     const forwardTo = extractAddress(env.FORWARD_TO ?? "").toLowerCase()
     const isFromForwardTo = forwardTo !== "" && senderAddr === forwardTo
 
-    // 1. Forward to the operator's inbox — unless the email came FROM
-    //    that same address (reply from the operator). Wrap in try/catch
-    //    so a bad FORWARD_TO (unverified destination, etc.) doesn't
-    //    block webhook dispatch.
+    // 1. Forward to the operator's inbox -- unless the email came FROM
+    //    that same address (reply from the operator).
     if (env.FORWARD_TO && !isFromForwardTo) {
       try {
         await message.forward(env.FORWARD_TO)
@@ -70,6 +65,11 @@ export default {
       return
     }
 
+    // 3. Read the raw RFC822 message and extract body parts.
+    const rawBytes = await streamToBytes(message.raw, message.rawSize)
+    const rawText = new TextDecoder("utf-8", { fatal: false }).decode(rawBytes)
+    const { text, html } = extractBody(rawText)
+
     const references = (message.headers.get("references") ?? "")
       .split(/\s+/)
       .filter(Boolean)
@@ -84,6 +84,8 @@ export default {
       list_id: message.headers.get("list-id") ?? null,
       x_github_reason: message.headers.get("x-github-reason") ?? null,
       x_github_sender: message.headers.get("x-github-sender") ?? null,
+      body_text: text,
+      body_html: html,
     }
 
     const body = JSON.stringify(payload)
@@ -102,9 +104,9 @@ export default {
     })
 
     if (!res.ok) {
-      const text = await res.text().catch(() => "")
+      const respText = await res.text().catch(() => "")
       console.error(
-        `webhook failed: status=${res.status} from=${message.from} message-id=${messageId} body=${text.slice(0, 200)}`,
+        `webhook failed: status=${res.status} from=${message.from} message-id=${messageId} body=${respText.slice(0, 200)}`,
       )
       if (res.status >= 500) {
         throw new Error(`webhook ${res.status}`)
@@ -112,6 +114,146 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>
+
+// --- RFC822 body extraction ---
+
+async function streamToBytes(
+  stream: ReadableStream,
+  sizeHint: number,
+): Promise<Uint8Array> {
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  const cap = Math.min(sizeHint + 1024, 512 * 1024)
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    total += value.byteLength
+    if (total > cap) break
+  }
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) {
+    out.set(c, offset)
+    offset += c.byteLength
+  }
+  return out
+}
+
+// Minimal MIME body extraction. Handles:
+// - Simple single-part messages (text/plain or text/html after headers)
+// - Multipart messages (extracts text/plain and text/html parts)
+// - Nested multipart (e.g. multipart/alternative inside multipart/mixed)
+// - Base64 and quoted-printable transfer encodings
+function extractBody(raw: string): { text: string | null; html: string | null } {
+  const headerEnd = raw.indexOf("\r\n\r\n")
+  if (headerEnd === -1) {
+    const altEnd = raw.indexOf("\n\n")
+    if (altEnd === -1) return { text: null, html: null }
+    return extractBodyFromParts(raw.slice(0, altEnd), raw.slice(altEnd + 2))
+  }
+  return extractBodyFromParts(raw.slice(0, headerEnd), raw.slice(headerEnd + 4))
+}
+
+function extractBodyFromParts(
+  headers: string,
+  body: string,
+): { text: string | null; html: string | null } {
+  const ct = findHeader(headers, "content-type") ?? "text/plain"
+  const boundaryMatch = ct.match(/boundary="?([^";\s]+)"?/i)
+
+  if (boundaryMatch) {
+    return extractMultipartBody(body, boundaryMatch[1])
+  }
+
+  const decoded = decodeTransferEncoding(body, findHeader(headers, "content-transfer-encoding"))
+  if (ct.toLowerCase().includes("text/html")) {
+    return { text: null, html: decoded }
+  }
+  return { text: decoded, html: null }
+}
+
+function extractMultipartBody(
+  body: string,
+  boundary: string,
+): { text: string | null; html: string | null } {
+  let text: string | null = null
+  let html: string | null = null
+  const delimiter = `--${boundary}`
+  const parts = body.split(delimiter)
+
+  for (const part of parts) {
+    if (part.startsWith("--") || part.trim() === "") continue
+
+    const partHeaderEnd = part.indexOf("\r\n\r\n")
+    const altPartHeaderEnd = part.indexOf("\n\n")
+    let partHeaders: string
+    let partBody: string
+
+    if (partHeaderEnd !== -1) {
+      partHeaders = part.slice(0, partHeaderEnd)
+      partBody = part.slice(partHeaderEnd + 4)
+    } else if (altPartHeaderEnd !== -1) {
+      partHeaders = part.slice(0, altPartHeaderEnd)
+      partBody = part.slice(altPartHeaderEnd + 2)
+    } else {
+      continue
+    }
+
+    const partCt = (findHeader(partHeaders, "content-type") ?? "").toLowerCase()
+    const cte = findHeader(partHeaders, "content-transfer-encoding")
+
+    // Recurse into nested multipart parts.
+    const nestedBoundary = partCt.match(/boundary="?([^";\s]+)"?/i)
+    if (nestedBoundary) {
+      const nested = extractMultipartBody(partBody, nestedBoundary[1])
+      if (!text && nested.text) text = nested.text
+      if (!html && nested.html) html = nested.html
+      continue
+    }
+
+    const decoded = decodeTransferEncoding(partBody, cte)
+    if (partCt.includes("text/plain") && !text) {
+      text = decoded
+    } else if (partCt.includes("text/html") && !html) {
+      html = decoded
+    }
+  }
+  return { text, html }
+}
+
+function findHeader(headers: string, name: string): string | null {
+  const re = new RegExp(`^${name}:\\s*(.+)`, "im")
+  const m = headers.match(re)
+  if (!m) return null
+  let value = m[1]
+  const rest = headers.slice((m.index ?? 0) + m[0].length)
+  const cont = rest.match(/^(?:\r?\n[ \t]+.+)+/)
+  if (cont) value += cont[0].replace(/\r?\n[ \t]+/g, " ")
+  return value.trim()
+}
+
+function decodeTransferEncoding(body: string, encoding: string | null): string {
+  const enc = (encoding ?? "").trim().toLowerCase()
+  if (enc === "base64") {
+    try {
+      return atob(body.replace(/\s/g, ""))
+    } catch {
+      return body
+    }
+  }
+  if (enc === "quoted-printable") {
+    return body
+      .replace(/=\r?\n/g, "")
+      .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      )
+  }
+  return body
+}
+
+// --- Utilities ---
 
 function compilePatterns(raw: readonly string[]): Pattern[] {
   const out: Pattern[] = []

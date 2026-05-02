@@ -9,7 +9,6 @@ import * as Sentry from "@sentry/bun"
 import { homedir } from "node:os"
 import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
-import { parseAllowlist } from "./email/allowlist"
 import { createApp } from "./handler"
 import { makePipeline } from "./pipeline"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
@@ -47,10 +46,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     if (sentryDsn) {
       Sentry.init({
         dsn: sentryDsn,
-        // Capture request headers / IP for debugging.
         sendDefaultPii: true,
-        // Default to 10% of requests traced in production. Override via
-        // SENTRY_TRACES_SAMPLE_RATE env var (0.0–1.0).
         tracesSampleRate: (() => {
           const rate = Number(process.env.SENTRY_TRACES_SAMPLE_RATE)
           return Number.isFinite(rate) ? rate : 0.1
@@ -59,7 +55,6 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       console.log("[opencode-webhooks] Sentry initialized")
     }
 
-    // Don't let a dispatch bug take down the host opencode server.
     const guard = globalThis as { __ghWebhookGuard?: boolean }
     if (!guard.__ghWebhookGuard) {
       process.on("unhandledRejection", (err) => {
@@ -76,25 +71,20 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const secret = cfg.secret ?? process.env.GITHUB_WEBHOOK_SECRET ?? ""
     const emailSecret =
       cfg.email_secret ?? process.env.EMAIL_WEBHOOK_SECRET ?? ""
-    const emailAllowlist = parseAllowlist(cfg.email_allowed_senders)
-    const timeoutMs = cfg.timeout_ms ?? 1_800_000 // 30 min
+    const timeoutMs = cfg.timeout_ms ?? 1_800_000
     const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
     const defaultCwd = cfg.default_cwd ?? ctx.directory
     const retention = cfg.retention ?? 1000
-    // Default DB path follows the XDG data spec; override db_path in
-    // webhooks.json to point at a persistent location.
     const xdgDataHome = process.env.XDG_DATA_HOME || `${homedir()}/.local/share`
     const dbPath = cfg.db_path ?? `${xdgDataHome}/opencode-webhooks/deliveries.sqlite`
 
     const botLogin = await resolveBotLogin()
     if (botLogin) {
       console.log(`[opencode-webhooks] bot identity: ${botLogin}`)
-      // Tag all Sentry events with the bot login so errors are
-      // attributable to the right deployment.
       Sentry.setTag("bot.login", botLogin)
     } else {
       console.warn(
-        `[opencode-webhooks] WARNING: could not resolve bot identity via 'gh api user' — $BOT_LOGIN in ignore_authors will not be substituted. Set GH_TOKEN to enable self-loop prevention.`,
+        `[opencode-webhooks] WARNING: could not resolve bot identity via 'gh api user' -- $BOT_LOGIN in ignore_authors will not be substituted. Set GH_TOKEN to enable self-loop prevention.`,
       )
     }
 
@@ -104,18 +94,18 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
 
     if (triggers.length === 0) {
       console.log(
-        `[opencode-webhooks] no triggers configured (looked at ${configPath()}) — listener disabled`,
+        `[opencode-webhooks] no triggers configured (looked at ${configPath()}) -- listener disabled`,
       )
       return {}
     }
     if (githubTriggerCount > 0 && !secret) {
       console.warn(
-        `[opencode-webhooks] WARNING: no GitHub HMAC secret configured (set "secret" in ${configPath()} or GITHUB_WEBHOOK_SECRET) — /webhooks/github will reject deliveries with 503 until you set one`,
+        `[opencode-webhooks] WARNING: no GitHub HMAC secret configured (set "secret" in ${configPath()} or GITHUB_WEBHOOK_SECRET) -- /webhooks/github will reject deliveries with 503 until you set one`,
       )
     }
     if (emailTriggerCount > 0 && !emailSecret) {
       console.warn(
-        `[opencode-webhooks] WARNING: no email HMAC secret configured (set "email_secret" in ${configPath()} or EMAIL_WEBHOOK_SECRET) — /webhooks/email will reject deliveries with 503 until you set one`,
+        `[opencode-webhooks] WARNING: no email HMAC secret configured (set "email_secret" in ${configPath()} or EMAIL_WEBHOOK_SECRET) -- /webhooks/email will reject deliveries with 503 until you set one`,
       )
     }
 
@@ -137,7 +127,6 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const app = createApp({
       secret,
       emailSecret,
-      emailAllowlist,
       triggers,
       store,
       retention,
@@ -156,8 +145,6 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       `[opencode-webhooks] listening on http://0.0.0.0:${server.port} (db: ${dbPath}, triggers: github=${githubTriggerCount}, email=${emailTriggerCount})`,
     )
 
-    // Graceful shutdown: stop accepting new connections, flush Sentry,
-    // drain in-flight dispatches with a 25s ceiling.
     let stopping = false
     const onShutdown = async (sig: NodeJS.Signals) => {
       if (stopping) return
@@ -177,7 +164,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
         console.log(`[opencode-webhooks] all dispatches drained`)
       } catch {
         console.warn(
-          `[opencode-webhooks] drain timeout after ${drainTimeoutMs}ms — ${drainCounter.inFlight()} dispatch(es) still in flight`,
+          `[opencode-webhooks] drain timeout after ${drainTimeoutMs}ms -- ${drainCounter.inFlight()} dispatch(es) still in flight`,
         )
       }
       await Sentry.close(2000)

@@ -9,7 +9,7 @@ export type Trigger = {
   source?: TriggerSource
   // For source=github_webhook: GitHub event header (e.g. "issues", "*").
   // For source=email:          synthetic event "email.<reason>"
-  //                            (e.g. "email.mention", "email.review_requested").
+  //                            (e.g. "email.mention", "email.forwarded").
   // Accepts a single event string or an array (OR-matched).
   // Supports trailing wildcard: "email.*" matches any email.* event.
   event: string | string[]
@@ -27,10 +27,6 @@ export type WebhookConfig = {
   port?: number
   secret?: string               // GitHub HMAC; falls back to GITHUB_WEBHOOK_SECRET
   email_secret?: string         // Email-worker HMAC; falls back to EMAIL_WEBHOOK_SECRET
-  // Defense-in-depth re-check of the email worker's From-address
-  // allowlist. Same format as the worker's ALLOWED_SENDERS: array of
-  // exact-match strings or "/regex/" patterns.
-  email_allowed_senders?: string[]
   timeout_ms?: number           // per-session abort, default 30 min
   max_concurrent?: number       // default 2
   // How long to wait for additional events before flushing the pipeline

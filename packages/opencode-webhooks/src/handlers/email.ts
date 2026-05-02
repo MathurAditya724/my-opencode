@@ -1,30 +1,34 @@
 // Hono handler for POST /webhooks/email. The Cloudflare email worker
-// HMAC-signs a small JSON event (see EmailEvent in email/identity.ts)
-// and POSTs it here. We re-verify the allowlist (defense-in-depth),
-// identify the referenced GitHub entity from Message-ID/In-Reply-To/
-// References, fetch canonical state via `gh`, and drive the same
-// dispatcher the github handler uses.
+// reads the raw RFC822 message, extracts headers and body (text + HTML),
+// HMAC-signs the JSON payload, and POSTs it here.
 //
-// Synthesized event is "email.<reason>" where <reason> is the
-// X-GitHub-Reason header (lowercased): mention, review_requested,
-// assign, comment, …
+// This handler is intentionally simple: verify HMAC, dedup by
+// message_id, and pass the full email content to the agent. The agent
+// decides what to do -- whether it's a GitHub notification, a Sentry
+// alert, a forwarded bug report, or anything else.
 
 import type { Context } from "hono"
 import type { AppEnv } from "../handler"
-import {
-  extractAddress,
-  matchesAllowlist,
-} from "../email/allowlist"
-import { type EmailEvent, identifyEmail } from "../email/identity"
-import { synthesizePayload } from "../email/synthesize"
 import { verifySha256Signature } from "../hmac"
 import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
-import { lookupString } from "../template"
+
+export type EmailEvent = {
+  from: string
+  to: string
+  subject: string
+  message_id: string
+  in_reply_to: string | null
+  references: string[]
+  list_id: string | null
+  x_github_reason: string | null
+  x_github_sender: string | null
+  body_text: string | null
+  body_html: string | null
+}
 
 export async function emailWebhookHandler(c: Context<AppEnv>) {
   const emailSecret = c.get("emailSecret")
-  const allowlist = c.get("emailAllowlist")
   const triggers = c.get("emailTriggers")
   const store = c.get("store")
   const retention = c.get("retention")
@@ -35,8 +39,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "no email HMAC secret configured on server" }, 503)
   }
 
-  // Read body as raw bytes for HMAC verification — must match the
-  // exact bytes the worker signed, not a re-serialized version.
   const body = await readBodyBytes(c.req.raw, MAX_EMAIL_BODY_BYTES)
   if (!body.ok) return body.response
 
@@ -62,14 +64,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "missing 'message_id' in event" }, 400)
   }
 
-  // Defense-in-depth: re-check the email worker's ALLOWED_SENDERS.
-  if (allowlist.length > 0 && !matchesAllowlist(event.from, allowlist)) {
-    return c.json(
-      { error: "sender not in allowlist", from: extractAddress(event.from) },
-      403,
-    )
-  }
-
   // Self-loop guard: drop emails triggered by the bot's own activity.
   const ghSender = event.x_github_sender
   if (
@@ -85,32 +79,11 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
-  const identity = identifyEmail(event)
-  if (identity.kind === "unknown") {
-    return c.json({
-      ok: true,
-      message_id: event.message_id,
-      dropped: "unknown-message-id",
-    })
-  }
-
-  const reason = (event.x_github_reason ?? "subscribed").toLowerCase()
+  const reason = (event.x_github_reason ?? "forwarded").toLowerCase()
   const triggerEvent = `email.${reason}`
   const dedupKey = `email:${event.message_id}`
 
-  // Synthesize BEFORE dedup — gh api fetch is idempotent, and we
-  // need the payload for prompt template rendering.
-  const synth = await synthesizePayload(identity, event, reason)
-  if (!synth.ok) {
-    return c.json({
-      ok: true,
-      message_id: event.message_id,
-      dropped: synth.error,
-    })
-  }
-
-  // Idempotency: dedup by Message-ID. insert() returns a UUID
-  // delivery_id on success, or null if the external key already exists.
+  // Dedup by Message-ID.
   const deliveryId = store.insert(dedupKey, triggerEvent, null)
   if (deliveryId) store.trim(retention)
   if (!deliveryId) {
@@ -122,24 +95,34 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
-  const senderForIgnore =
-    lookupString(synth.payload, "comment.user.login") ??
-    lookupString(synth.payload, "review.user.login") ??
-    ghSender
+  // Build the payload the agent will see -- the full email content.
+  const emailPayload = {
+    from: event.from,
+    to: event.to,
+    subject: event.subject,
+    message_id: event.message_id,
+    in_reply_to: event.in_reply_to,
+    references: event.references,
+    list_id: event.list_id,
+    x_github_reason: event.x_github_reason,
+    x_github_sender: event.x_github_sender,
+    body_text: event.body_text,
+    body_html: event.body_html,
+  }
 
   const { dispatched, skipped } = evaluateAndDispatch({
     triggers,
     event: triggerEvent,
     action: null,
-    payload: synth.payload,
-    sender: senderForIgnore,
+    payload: emailPayload,
+    sender: ghSender,
     botLogin,
     deliveryId,
     templateContext: {
       event: triggerEvent,
       action: null,
       delivery_id: deliveryId,
-      payload: synth.payload,
+      payload: emailPayload,
     },
     pipeline,
     store,
@@ -182,5 +165,7 @@ function parseEmailEvent(raw: string): EmailEvent {
     list_id: strOrNull(o.list_id),
     x_github_reason: strOrNull(o.x_github_reason),
     x_github_sender: strOrNull(o.x_github_sender),
+    body_text: strOrNull(o.body_text),
+    body_html: strOrNull(o.body_html),
   }
 }

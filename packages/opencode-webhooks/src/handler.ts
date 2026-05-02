@@ -1,6 +1,6 @@
 // Hono app for the plugin's HTTP listener. Routes: healthz, delivery
 // read endpoints, entity/stats API, dashboard pages, and one webhook
-// ingest per source — sharing the same store, pipeline, and trigger
+// ingest per source -- sharing the same store, pipeline, and trigger
 // config. Per-route logic lives under ./handlers/.
 //
 // Triggers are split by `source` here once so the handlers don't need
@@ -8,7 +8,6 @@
 
 import { Hono, type Context } from "hono"
 import * as Sentry from "@sentry/bun"
-import type { AllowlistPattern } from "./email/allowlist"
 import {
   getDeliveryHandler,
   listDeliveriesHandler,
@@ -34,7 +33,6 @@ export type AppEnv = {
   Variables: {
     secret: string
     emailSecret: string
-    emailAllowlist: AllowlistPattern[]
     store: DeliveryStore
     retention: number
     pipeline: Pipeline
@@ -47,7 +45,6 @@ export type AppEnv = {
 export function createApp(opts: {
   secret: string
   emailSecret: string
-  emailAllowlist: AllowlistPattern[]
   triggers: NormalizedTrigger[]
   store: DeliveryStore
   retention: number
@@ -154,7 +151,6 @@ export function createApp(opts: {
   app.use("/webhooks/*", async (c, next) => {
     c.set("secret", opts.secret)
     c.set("emailSecret", opts.emailSecret)
-    c.set("emailAllowlist", opts.emailAllowlist)
     c.set("store", opts.store)
     c.set("retention", opts.retention)
     c.set("pipeline", opts.pipeline)
