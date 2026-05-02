@@ -44,11 +44,15 @@ export function normalizeTrigger(
     seen.add(k)
     merged.push(expanded)
   }
+  // Normalize event to always be an array so matchers can stay simple.
+  const events = Array.isArray(t.event) ? t.event : [t.event]
+  const { event: _drop, ...rest } = t
   return {
-    ...t,
+    ...rest,
     source: t.source ?? "github_webhook",
     action: t.action ?? null,
     enabled: t.enabled !== false,
+    events,
     ignore_authors: merged.length > 0 ? merged : undefined,
   }
 }

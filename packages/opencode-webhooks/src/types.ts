@@ -10,7 +10,8 @@ export type Trigger = {
   // For source=github_webhook: GitHub event header (e.g. "issues", "*").
   // For source=email:          synthetic event "email.<reason>"
   //                            (e.g. "email.mention", "email.review_requested").
-  event: string
+  // Accepts a single event string or an array (OR-matched).
+  event: string | string[]
   action?: string | null        // e.g. "assigned"; null = any action
   agent: string
   prompt_template: string       // {{ payload.foo.bar }} placeholders
@@ -44,10 +45,12 @@ export type WebhookConfig = {
   triggers?: Trigger[]
 }
 
-export type NormalizedTrigger = Omit<Trigger, "action" | "enabled" | "source"> & {
+export type NormalizedTrigger = Omit<Trigger, "action" | "enabled" | "source" | "event"> & {
   source: TriggerSource
   action: string | null
   enabled: boolean
+  // Always normalized to an array so matchers don't need to branch.
+  events: string[]
 }
 
 export type SkippedDispatch = {
