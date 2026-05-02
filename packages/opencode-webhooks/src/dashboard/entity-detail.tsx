@@ -26,8 +26,10 @@ type EntityDetailProps = {
 }
 
 export function EntityDetailPage({ entity_key, session_id, events }: EntityDetailProps) {
-  const kind = entity_key.includes("/") ? "pull_request" : "issue"
-  const kindLabel = kind === "pull_request" ? "Pull Request" : "Issue"
+  const isIssue = events.some(
+    (ev) => ev.event === "issues" || ev.event.startsWith("email.assign"),
+  )
+  const kindLabel = isIssue ? "Issue" : "Pull Request"
   const opencodeUrl = session_id
     ? `http://localhost:4096/session/${session_id}`
     : null

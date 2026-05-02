@@ -1,13 +1,17 @@
-// Hono handlers for the dashboard API. Three routes:
-//   GET /entities         — paginated entity list with latest status
-//   GET /entities/:key    — single entity timeline
-//   GET /stats            — aggregate dashboard stats
-//   POST /api/dispatches/:id/retry — retry a failed/timed-out dispatch
+// Hono handlers for the dashboard API. Routes:
+//   GET  /api/entities              — paginated entity list with latest status
+//   GET  /api/entities/:key         — single entity timeline
+//   GET  /api/stats                 — aggregate dashboard stats
+//   POST /api/dispatches/:id/retry  — retry a failed/timed-out dispatch
 //
 // No auth: trusts the deployment's network boundary, same as /healthz.
 
 import type { Context } from "hono"
 import type { AppEnv } from "../handler"
+import type { EntityKey } from "../entity"
+import type { DeliveryStore } from "../storage"
+import type { Pipeline } from "../pipeline"
+import type { DispatchRow } from "../types"
 
 export function listEntitiesHandler(c: Context<AppEnv>) {
   const store = c.get("store")
@@ -43,20 +47,25 @@ export function getStatsHandler(c: Context<AppEnv>) {
   return c.json(store.getStats())
 }
 
-export function retryDispatchHandler(c: Context<AppEnv>) {
-  const store = c.get("store")
-  const pipeline = c.get("pipeline")
+function parseEntityKey(row: DispatchRow): EntityKey {
+  const parts = row.entity_key!.split("#")
+  const repo = parts[0]
+  const number = Number(parts[1]) || 0
+  const kind: "issue" | "pull_request" =
+    row.matched_event.startsWith("issues") || row.matched_event === "email.assign"
+      ? "issue"
+      : "pull_request"
+  return { key: row.entity_key!, repo, number, kind }
+}
 
-  const idParam = c.req.param("id")
-  if (!idParam) return c.json({ error: "missing dispatch id" }, 400)
-  const dispatchId = Number(idParam)
-  if (!Number.isFinite(dispatchId)) return c.json({ error: "invalid dispatch id" }, 400)
-
-  const row = store.getDispatch(dispatchId)
-  if (!row) return c.json({ error: "dispatch not found" }, 404)
-  if (!row.prompt) return c.json({ error: "no stored prompt — cannot retry" }, 422)
+function executeRetry(
+  store: DeliveryStore,
+  pipeline: Pipeline,
+  row: DispatchRow,
+): { ok: true; newDispatchId: number; entityKey: string | null } | { ok: false; error: string; status: number } {
+  if (!row.prompt) return { ok: false, error: "no stored prompt — cannot retry", status: 422 }
   if (row.status === "running" || row.status === "pending") {
-    return c.json({ error: "dispatch is still in progress" }, 409)
+    return { ok: false, error: "dispatch is still in progress", status: 409 }
   }
 
   const retryTriggerName = `${row.trigger_name}:retry`
@@ -81,7 +90,7 @@ export function retryDispatchHandler(c: Context<AppEnv>) {
 
   if (row.entity_key) {
     pipeline.dispatch(
-      { key: row.entity_key, repo: "", number: 0, kind: "issue" as const },
+      parseEntityKey(row),
       trigger,
       row.prompt,
       row.delivery_id,
@@ -98,10 +107,28 @@ export function retryDispatchHandler(c: Context<AppEnv>) {
     )
   }
 
+  return { ok: true, newDispatchId, entityKey: row.entity_key }
+}
+
+export function retryDispatchHandler(c: Context<AppEnv>) {
+  const store = c.get("store")
+  const pipeline = c.get("pipeline")
+
+  const idParam = c.req.param("id")
+  if (!idParam) return c.json({ error: "missing dispatch id" }, 400)
+  const dispatchId = Number(idParam)
+  if (!Number.isFinite(dispatchId)) return c.json({ error: "invalid dispatch id" }, 400)
+
+  const row = store.getDispatch(dispatchId)
+  if (!row) return c.json({ error: "dispatch not found" }, 404)
+
+  const result = executeRetry(store, pipeline, row)
+  if (!result.ok) return c.json({ error: result.error }, result.status as any)
+
   return c.json({
     ok: true,
     original_dispatch_id: dispatchId,
-    new_dispatch_id: newDispatchId,
+    new_dispatch_id: result.newDispatchId,
     status: "pending",
   })
 }
@@ -116,53 +143,18 @@ export function dashboardRetryHandler(c: Context<AppEnv>) {
   if (!Number.isFinite(dispatchId)) return c.redirect("/dashboard")
 
   const row = store.getDispatch(dispatchId)
-  if (!row || !row.prompt) return c.redirect("/dashboard")
-  if (row.status === "running" || row.status === "pending") {
-    const entityKey = row.entity_key
-    if (entityKey) {
-      return c.redirect(`/dashboard/entities/${encodeURIComponent(entityKey)}`)
+  if (!row) return c.redirect("/dashboard")
+
+  const result = executeRetry(store, pipeline, row)
+  if (!result.ok) {
+    if (row.entity_key) {
+      return c.redirect(`/dashboard/entities/${encodeURIComponent(row.entity_key)}`)
     }
     return c.redirect("/dashboard")
   }
 
-  const retryTriggerName = `${row.trigger_name}:retry`
-  const newDispatchId = store.createDispatch(
-    row.delivery_id,
-    retryTriggerName,
-    row.matched_event,
-    row.agent,
-    row.entity_key,
-    row.prompt,
-  )
-
-  const trigger = {
-    name: retryTriggerName,
-    source: "github_webhook" as const,
-    action: null,
-    enabled: true,
-    events: [row.matched_event],
-    agent: row.agent,
-    prompt_template: "",
+  if (result.entityKey) {
+    return c.redirect(`/dashboard/entities/${encodeURIComponent(result.entityKey)}`)
   }
-
-  if (row.entity_key) {
-    pipeline.dispatch(
-      { key: row.entity_key, repo: "", number: 0, kind: "issue" as const },
-      trigger,
-      row.prompt,
-      row.delivery_id,
-      row.matched_event,
-      newDispatchId,
-    )
-    return c.redirect(`/dashboard/entities/${encodeURIComponent(row.entity_key)}`)
-  }
-
-  pipeline.dispatchNoAffinity(
-    trigger,
-    row.prompt,
-    row.delivery_id,
-    row.matched_event,
-    newDispatchId,
-  )
   return c.redirect("/dashboard")
 }

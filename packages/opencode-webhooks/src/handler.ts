@@ -6,7 +6,7 @@
 // Triggers are split by `source` here once so the handlers don't need
 // to know about other ingest paths.
 
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import * as Sentry from "@sentry/bun"
 import type { AllowlistPattern } from "./email/allowlist"
 import {
@@ -108,7 +108,7 @@ export function createApp(opts: {
   })
 
   // Inject store for read-only routes (deliveries, entities, stats, dashboard).
-  const storeMiddleware = async (c: any, next: any) => {
+  const storeMiddleware = async (c: Context<AppEnv>, next: () => Promise<void>) => {
     c.set("store", opts.store)
     await next()
   }
@@ -121,7 +121,7 @@ export function createApp(opts: {
   app.get("/deliveries/:id", getDeliveryHandler)
 
   // Inject store + pipeline for API routes that need dispatch capabilities.
-  const dispatchMiddleware = async (c: any, next: any) => {
+  const dispatchMiddleware = async (c: Context<AppEnv>, next: () => Promise<void>) => {
     c.set("store", opts.store)
     c.set("pipeline", opts.pipeline)
     await next()
@@ -140,6 +140,7 @@ export function createApp(opts: {
   app.use("/dashboard", storeMiddleware)
   app.use("/dashboard/*", storeMiddleware)
   app.get("/dashboard", dashboardOverviewHandler)
+  app.get("/dashboard/entities", (c) => c.redirect("/dashboard"))
   app.get("/dashboard/entities/:key", dashboardEntityHandler)
   app.get("/dashboard/deliveries", dashboardDeliveriesHandler)
 

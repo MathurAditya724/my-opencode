@@ -12,7 +12,7 @@ Fix failing CI on a PR the bot authored. Load `repo-setup` first.
 
 ## Budget
 
-3 attempts max per PR. Count `ci-fixer: starting attempt` comments
+3 attempts max per PR. Count `fix-ci: starting attempt` comments
 on the PR. If >= 3, BLOCKED. Otherwise post a sentinel comment
 before starting work.
 
@@ -26,7 +26,7 @@ before starting work.
 5. Infra/dependency issue? BLOCKED.
 6. Otherwise: make the smallest fix. Reproduce locally if possible.
 7. Load `deslop` and `review` skills.
-8. Commit, push, and post a `ci-fixer: result` comment on the PR.
+8. Commit, push, and post a `fix-ci: result` comment on the PR.
 
 Don't modify CI config unless the failure is specifically in it.
 Don't bump dependency versions. Don't force-push. Don't merge.

@@ -61,7 +61,7 @@ export function extractEntityKey(
 
   // check_suite.* — extract from pull_requests array
   if (event === "check_suite") {
-    const prs = lookup(payload, "check_suite.pull_requests") as unknown[]
+    const prs = lookup(payload, "check_suite.pull_requests")
     if (!Array.isArray(prs) || prs.length === 0) return null
     const first = prs[0] as Record<string, unknown>
     const num = first?.number

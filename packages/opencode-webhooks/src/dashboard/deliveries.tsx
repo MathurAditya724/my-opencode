@@ -32,7 +32,7 @@ export function DeliveriesPage({ deliveries, next_cursor, filters }: DeliveriesP
         <label>Status</label>
         <select name="status">
           <option value="">All</option>
-          {["pending", "running", "succeeded", "failed", "timeout", "skipped"].map((s) => (
+          {["pending", "running", "succeeded", "failed", "timeout"].map((s) => (
             <option value={s} selected={filters.status === s}>
               {s}
             </option>
@@ -67,10 +67,8 @@ export function DeliveriesPage({ deliveries, next_cursor, filters }: DeliveriesP
               return (
                 <tr>
                   <td class="mono">{eventLabel}</td>
-                  <td>
-                    <a href={`/deliveries/${d.delivery_id}`} class="mono text-small">
-                      {d.delivery_id.slice(0, 8)}…
-                    </a>
+                  <td class="mono text-small">
+                    {d.delivery_id.slice(0, 8)}…
                   </td>
                   <td class="mono">{d.dispatch_count}</td>
                   <td>

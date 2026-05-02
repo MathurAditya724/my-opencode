@@ -167,6 +167,11 @@ export function makePipeline(opts: {
       ? events[0].prompt
       : formatBatchPrompt(events)
 
+    // Reset the abort timer — this session is still actively processing.
+    clearTimeout(entry.abortTimer)
+    entry.abortTimer = setTimeout(() => entry.abort.abort(), timeoutMs)
+    entry.abortTimer.unref?.()
+
     entry.busy = true
     for (const e of events) {
       store.markRunning(e.dispatchId, entry.sessionId)

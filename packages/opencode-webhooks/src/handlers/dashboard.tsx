@@ -9,6 +9,14 @@ import { EntityDetailPage } from "../dashboard/entity-detail"
 import { DeliveriesPage } from "../dashboard/deliveries"
 import type { DispatchStatus } from "../types"
 
+const VALID_STATUSES: ReadonlySet<string> = new Set([
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "timeout",
+])
+
 export function dashboardOverviewHandler(c: Context<AppEnv>) {
   const store = c.get("store")
   const stats = store.getStats()
@@ -54,7 +62,10 @@ export function dashboardDeliveriesHandler(c: Context<AppEnv>) {
   const store = c.get("store")
   const url = new URL(c.req.url)
   const event = url.searchParams.get("event") ?? undefined
-  const status = url.searchParams.get("status") as DispatchStatus | undefined
+  const statusRaw = url.searchParams.get("status")
+  const status: DispatchStatus | undefined = statusRaw && VALID_STATUSES.has(statusRaw)
+    ? (statusRaw as DispatchStatus)
+    : undefined
   const cursor = url.searchParams.get("cursor") ?? undefined
 
   const { rows, next_cursor } = store.listDeliveries({

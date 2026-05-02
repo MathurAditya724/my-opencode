@@ -65,7 +65,6 @@ export type DispatchStatus =
   | "succeeded"
   | "failed"
   | "timeout"
-  | "skipped"
 
 export type DispatchRow = {
   id: number
