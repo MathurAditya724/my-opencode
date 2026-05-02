@@ -45,7 +45,7 @@ export default {
   async email(message, env, _ctx) {
     const messageId = message.headers.get("message-id") ?? ""
     const senderAddr = extractAddress(message.from).toLowerCase()
-    const forwardTo = env.FORWARD_TO?.toLowerCase() ?? ""
+    const forwardTo = extractAddress(env.FORWARD_TO ?? "").toLowerCase()
     const isFromForwardTo = forwardTo !== "" && senderAddr === forwardTo
 
     // 1. Forward to the operator's inbox — unless the email came FROM
