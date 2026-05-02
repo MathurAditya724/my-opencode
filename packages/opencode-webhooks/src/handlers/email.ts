@@ -109,10 +109,11 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
-  // Idempotency: dedup by Message-ID.
-  const inserted = store.insert(dedupKey, triggerEvent, null)
-  if (inserted) store.trim(retention)
-  if (!inserted) {
+  // Idempotency: dedup by Message-ID. insert() returns a UUID
+  // delivery_id on success, or null if the external key already exists.
+  const deliveryId = store.insert(dedupKey, triggerEvent, null)
+  if (deliveryId) store.trim(retention)
+  if (!deliveryId) {
     return c.json({
       ok: true,
       message_id: event.message_id,
@@ -134,11 +135,11 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     payload: synth.payload,
     sender: senderForIgnore,
     botLogin,
-    deliveryId: dedupKey,
+    deliveryId,
     templateContext: {
       event: triggerEvent,
       action: null,
-      delivery_id: dedupKey,
+      delivery_id: deliveryId,
       payload: synth.payload,
       ...synthetics,
     },
@@ -148,6 +149,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
 
   return c.json({
     ok: true,
+    delivery_id: deliveryId,
     message_id: event.message_id,
     event: triggerEvent,
     duplicate: false,
