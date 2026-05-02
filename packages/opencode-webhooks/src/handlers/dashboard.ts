@@ -1,6 +1,7 @@
-/** @jsxImportSource hono/jsx */
 // Hono handlers for the server-rendered dashboard pages.
-// These fetch data from the store and render JSX components.
+// These call component functions directly (not as JSX) to avoid
+// "No renderer found" errors when the jsxImportSource pragma
+// isn't resolved in node_modules at runtime.
 
 import type { Context } from "hono"
 import type { AppEnv } from "../handler"
@@ -23,9 +24,7 @@ export function dashboardOverviewHandler(c: Context<AppEnv>) {
     trigger_name: "",
   }))
 
-  return c.html(
-    <OverviewPage stats={stats} recent={recent} />
-  )
+  return c.html(OverviewPage({ stats, recent }))
 }
 
 export function dashboardEntityHandler(c: Context<AppEnv>) {
@@ -39,11 +38,9 @@ export function dashboardEntityHandler(c: Context<AppEnv>) {
     return c.text(`entity not found: ${decoded}`, 404)
   }
 
-  return c.html(
-    <EntityDetailPage
-      entity_key={result.entity_key}
-      session_id={result.session_id}
-      events={result.events}
-    />
-  )
+  return c.html(EntityDetailPage({
+    entity_key: result.entity_key,
+    session_id: result.session_id,
+    events: result.events,
+  }))
 }

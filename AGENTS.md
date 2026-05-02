@@ -62,11 +62,17 @@
 <!-- lore:019de571-09ed-7a93-80a1-2bdb76b811d3 -->
 * **message.forward() failure blocks entire email pipeline if not caught**: In a Cloudflare Email Worker, if \`message.forward()\` throws (e.g. unverified destination), the worker throws and CF retries the entire email — blocking all webhook dispatch until fixed. Always wrap \`message.forward()\` in try/catch and log the error, then continue to the POST. Otherwise a misconfigured \`FORWARD\_TO\` silently kills the whole pipeline.
 
+<!-- lore:019de9d7-f743-7103-b241-5c650d5bd5fd -->
+* **opencode-webhooks loads once per project/worktree — EADDRINUSE on shared port**: OpenCode loads plugins once per project/worktree in the same process. When multiple projects are open simultaneously (e.g. Railway volume with many repos), the plugin tries \`Bun.serve\` on port 5050 for each — only the first succeeds, rest crash with \`EADDRINUSE\`. Fix: guard with \`globalThis.\_\_webhookServerStarted\` flag. First invocation sets it and starts server; subsequent ones return early. Reset flag to \`false\` in catch block so a failed startup can be retried. Pattern already used for \`\_\_ghWebhookGuard\` (unhandledRejection dedup) in \`index.ts\`.
+
 <!-- lore:019ddf9b-acec-7435-ac05-5e06fb4359bb -->
 * **opencode.json \`experimental\` key rejects unknown subkeys (additionalProperties: false)**: The published OpenCode config JSON schema defines \`experimental\` with \`additionalProperties: false\`. Adding a custom key like \`experimental.webhook\` will fail strict schema validation in editors. Workaround: store plugin-specific config in a separate file (e.g. \`~/.config/opencode/webhooks.json\`) read directly via \`Bun.file().json()\`, or drop the \`$schema\` reference from \`opencode.json\` to silence editor errors. Do NOT put custom plugin config under \`experimental\` expecting schema tolerance.
 
 <!-- lore:019de984-4bcd-7f21-acb9-384550d3fb3c -->
 * **Railway PORT env causes OpenCode/webhook port conflict**: Railway sets \`PORT\` env var and routes all external traffic to it. OpenCode runs on whatever port Railway assigns (e.g. 8080 via \`PORT\`). The webhook plugin binds separately to its own port (default 5050 via \`WEBHOOK\_PORT\`). If the plugin crashes on startup (e.g. JSX config missing), its port disappears from Railway's service view while OpenCode's port remains. \`EXPOSE\` in Dockerfile is documentation only — Railway ignores it.
+
+<!-- lore:019de9d7-f749-71aa-ad94-bc9caaea687c -->
+* **SQLite schema migration required when deliveries table lacks external\_id column**: If the persistent SQLite DB (\`/home/developer/dev/.opencode/github-webhooks.sqlite\`) was created by an older plugin version, it won't have the \`external\_id\` column. \`storage.ts:openDeliveryStore()\` crashes with \`SQLiteError: table deliveries has no column named external\_id\` at \`db.prepare()\` (line 236), killing all plugin instances. The migration code in \`storage.ts\` adds the column when missing — ensure the migration check runs successfully before \`insertStmt\` is prepared. On Railway, this manifests as all plugin instances failing until the image with migration code is deployed.
 
 ### Pattern
 
