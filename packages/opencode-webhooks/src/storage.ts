@@ -3,6 +3,7 @@
 // needed to answer "what happened with delivery X?".
 
 import { Database } from "bun:sqlite"
+import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { dirname } from "node:path"
 import type {
@@ -30,8 +31,16 @@ export type ListDeliveriesResult = {
 }
 
 export type DeliveryStore = {
-  /** Insert a delivery. Returns true if inserted, false if it was a duplicate. */
-  insert(deliveryId: string, event: string, action: string | null): boolean
+  /**
+   * Insert a delivery. `externalId` is the dedup key (X-GitHub-Delivery
+   * or email:<message_id>). Returns the generated UUID delivery_id on
+   * success, or null if the externalId already exists (duplicate).
+   */
+  insert(
+    externalId: string,
+    event: string,
+    action: string | null,
+  ): string | null
   /** Trim oldest deliveries when count exceeds `retention`. Cascades to dispatches. */
   trim(retention: number): void
 
@@ -69,6 +78,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
     CREATE TABLE IF NOT EXISTS deliveries (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       delivery_id  TEXT NOT NULL UNIQUE,
+      external_id  TEXT NOT NULL UNIQUE,
       event        TEXT NOT NULL,
       action       TEXT,
       received_at  INTEGER NOT NULL
@@ -96,10 +106,10 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
 
   const insertStmt = db.prepare<
     void,
-    [string, string, string | null, number]
+    [string, string, string, string | null, number]
   >(
-    `INSERT INTO deliveries (delivery_id, event, action, received_at)
-     VALUES (?, ?, ?, ?) ON CONFLICT(delivery_id) DO NOTHING`,
+    `INSERT INTO deliveries (delivery_id, external_id, event, action, received_at)
+     VALUES (?, ?, ?, ?, ?) ON CONFLICT(external_id) DO NOTHING`,
   )
   const trimStmt = db.prepare<void, [number]>(
     `DELETE FROM deliveries WHERE id NOT IN (
@@ -128,7 +138,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   )
 
   const getDeliveryStmt = db.prepare<DeliveryRow, [string]>(
-    `SELECT delivery_id, event, action, received_at
+    `SELECT delivery_id, external_id, event, action, received_at
      FROM deliveries WHERE delivery_id = ?`,
   )
   const getDispatchesStmt = db.prepare<DispatchRow, [string]>(
@@ -138,9 +148,16 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   )
 
   return {
-    insert(deliveryId, event, action) {
-      const res = insertStmt.run(deliveryId, event, action, Date.now())
-      return res.changes > 0
+    insert(externalId, event, action) {
+      const deliveryId = randomUUID()
+      const res = insertStmt.run(
+        deliveryId,
+        externalId,
+        event,
+        action,
+        Date.now(),
+      )
+      return res.changes > 0 ? deliveryId : null
     },
     trim(retention) {
       if (retention > 0) trimStmt.run(retention)
@@ -177,8 +194,6 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
       if (opts.cursor) {
         const parsed = parseCursor(opts.cursor)
         if (parsed) {
-          // received_at DESC, id DESC: a row is "after" the cursor when
-          // (received_at, id) < (cursor.received_at, cursor.id).
           where.push("(d.received_at < ? OR (d.received_at = ? AND d.id < ?))")
           params.push(parsed.received_at, parsed.received_at, parsed.id)
         }
@@ -200,7 +215,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
 
       const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""
       const sql = `
-        SELECT d.id, d.delivery_id, d.event, d.action, d.received_at,
+        SELECT d.id, d.delivery_id, d.external_id, d.event, d.action, d.received_at,
                COUNT(disp.id) AS dispatch_count,
                COALESCE(SUM(CASE WHEN disp.status = 'pending'   THEN 1 ELSE 0 END), 0) AS s_pending,
                COALESCE(SUM(CASE WHEN disp.status = 'running'   THEN 1 ELSE 0 END), 0) AS s_running,
@@ -214,7 +229,6 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
         ORDER BY d.received_at DESC, d.id DESC
         LIMIT ?
       `
-      // Fetch limit + 1 so we know whether to issue a next_cursor.
       const stmt = db.prepare<ListRow, (string | number)[]>(sql)
       const raw = stmt.all(...params, limit + 1)
       const hasMore = raw.length > limit
@@ -229,6 +243,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
         if (r.s_timeout) statuses.timeout = r.s_timeout
         return {
           delivery_id: r.delivery_id,
+          external_id: r.external_id,
           event: r.event,
           action: r.action,
           received_at: r.received_at,
@@ -257,6 +272,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
 type ListRow = {
   id: number
   delivery_id: string
+  external_id: string
   event: string
   action: string | null
   received_at: number

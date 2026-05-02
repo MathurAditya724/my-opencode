@@ -49,13 +49,15 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     // Not JSON — dispatch with empty payload.
   }
 
-  // Idempotency: dedup by X-GitHub-Delivery.
-  const inserted = store.insert(deliveryId, event, action)
-  if (inserted) store.trim(retention)
-  if (!inserted) {
+  // Idempotency: dedup by X-GitHub-Delivery. insert() returns a UUID
+  // delivery_id on success, or null if the external key already exists.
+  const externalId = deliveryId
+  const newDeliveryId = store.insert(externalId, event, action)
+  if (newDeliveryId) store.trim(retention)
+  if (!newDeliveryId) {
     return c.json({
       ok: true,
-      delivery_id: deliveryId,
+      external_id: externalId,
       duplicate: true,
       dispatched: [],
     })
@@ -69,11 +71,11 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     payload,
     sender: lookupString(payload, "sender.login"),
     botLogin,
-    deliveryId,
+    deliveryId: newDeliveryId,
     templateContext: {
       event,
       action,
-      delivery_id: deliveryId,
+      delivery_id: newDeliveryId,
       payload,
       ...synthetics,
     },
@@ -83,7 +85,8 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
 
   return c.json({
     ok: true,
-    delivery_id: deliveryId,
+    delivery_id: newDeliveryId,
+    external_id: externalId,
     event,
     action,
     duplicate: false,

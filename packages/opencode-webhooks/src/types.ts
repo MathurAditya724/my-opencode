@@ -83,6 +83,7 @@ export type DispatchRow = {
 
 export type DeliveryRow = {
   delivery_id: string
+  external_id: string
   event: string
   action: string | null
   received_at: number
