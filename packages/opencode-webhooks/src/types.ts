@@ -65,6 +65,7 @@ export type DispatchStatus =
   | "succeeded"
   | "failed"
   | "timeout"
+  | "skipped"
 
 export type DispatchRow = {
   id: number
@@ -77,6 +78,8 @@ export type DispatchRow = {
   started_at: number
   completed_at: number | null
   error: string | null
+  entity_key: string | null
+  outcome: string | null
 }
 
 export type DeliveryRow = {
@@ -85,6 +88,18 @@ export type DeliveryRow = {
   event: string
   action: string | null
   received_at: number
+  skipped: string | null
+}
+
+export type EntityListItem = {
+  entity_key: string
+  session_id: string | null
+  last_event: string
+  last_action: string | null
+  last_status: DispatchStatus
+  last_outcome: string | null
+  last_activity: number
+  event_count: number
 }
 
 // List-view row: delivery + per-status dispatch counts. Cheap to compute

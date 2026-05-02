@@ -85,6 +85,7 @@ export function evaluateAndDispatch(opts: {
       t.name,
       opts.event,
       t.agent,
+      entityKey?.key ?? null,
     )
 
     if (entityKey) {
@@ -107,5 +108,11 @@ export function evaluateAndDispatch(opts: {
     }
     dispatched.push(t.name)
   }
+
+  // Persist skipped triggers on the delivery for the dashboard.
+  if (skipped.length > 0) {
+    opts.store.saveSkipped(opts.deliveryId, skipped)
+  }
+
   return { dispatched, skipped }
 }
