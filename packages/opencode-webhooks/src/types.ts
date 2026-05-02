@@ -80,6 +80,7 @@ export type DispatchRow = {
   error: string | null
   entity_key: string | null
   outcome: string | null
+  prompt: string | null
 }
 
 export type DeliveryRow = {

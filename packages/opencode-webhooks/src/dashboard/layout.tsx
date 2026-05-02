@@ -362,6 +362,8 @@ const CSS = `
   .btn:hover { background: #30363d; text-decoration: none; }
   .btn-primary { background: #238636; color: #fff; border-color: #2ea043; }
   .btn-primary:hover { background: #2ea043; }
+  .btn-retry { background: #30363d; color: #d29922; border-color: #484f58; cursor: pointer; }
+  .btn-retry:hover { background: #484f58; }
 
   /* Filter bar */
   .filter-bar {

@@ -11,6 +11,7 @@ type EntityDetailProps = {
   entity_key: string
   session_id: string | null
   events: Array<{
+    dispatch_id: number
     delivery_id: string
     event: string
     action: string | null
@@ -83,6 +84,17 @@ export function EntityDetailPage({ entity_key, session_id, events }: EntityDetai
                   <div style="margin-top:6px; font-size:13px; color:#8b949e;">
                     {ev.outcome}
                   </div>
+                ) : null}
+                {(ev.status === "failed" || ev.status === "timeout") ? (
+                  <form
+                    method="post"
+                    action={`/dashboard/dispatches/${ev.dispatch_id}/retry`}
+                    style="margin-top:8px; display:inline;"
+                  >
+                    <button type="submit" class="btn btn-retry">
+                      Retry
+                    </button>
+                  </form>
                 ) : null}
               </li>
             )

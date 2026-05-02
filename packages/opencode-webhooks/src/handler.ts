@@ -17,6 +17,8 @@ import {
   listEntitiesHandler,
   getEntityHandler,
   getStatsHandler,
+  retryDispatchHandler,
+  dashboardRetryHandler,
 } from "./handlers/entities"
 import {
   dashboardOverviewHandler,
@@ -118,10 +120,20 @@ export function createApp(opts: {
   app.get("/deliveries", listDeliveriesHandler)
   app.get("/deliveries/:id", getDeliveryHandler)
 
+  // Inject store + pipeline for API routes that need dispatch capabilities.
+  const dispatchMiddleware = async (c: any, next: any) => {
+    c.set("store", opts.store)
+    c.set("pipeline", opts.pipeline)
+    await next()
+  }
+
   app.use("/api/*", storeMiddleware)
   app.get("/api/entities", listEntitiesHandler)
   app.get("/api/entities/:key", getEntityHandler)
   app.get("/api/stats", getStatsHandler)
+
+  app.use("/api/dispatches/*", dispatchMiddleware)
+  app.post("/api/dispatches/:id/retry", retryDispatchHandler)
 
   // --- Dashboard pages (server-rendered HTML) ---
 
@@ -130,6 +142,10 @@ export function createApp(opts: {
   app.get("/dashboard", dashboardOverviewHandler)
   app.get("/dashboard/entities/:key", dashboardEntityHandler)
   app.get("/dashboard/deliveries", dashboardDeliveriesHandler)
+
+  // Dashboard retry: POST form action that retries and redirects back.
+  app.use("/dashboard/dispatches/*", dispatchMiddleware)
+  app.post("/dashboard/dispatches/:id/retry", dashboardRetryHandler)
 
   // Redirect root to dashboard for convenience.
   app.get("/", (c) => c.redirect("/dashboard"))

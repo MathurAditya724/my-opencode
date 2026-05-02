@@ -46,6 +46,7 @@ export type EntityDetail = {
   entity_key: string
   session_id: string | null
   events: Array<{
+    dispatch_id: number
     delivery_id: string
     event: string
     action: string | null
@@ -89,7 +90,10 @@ export type DeliveryStore = {
     matchedEvent: string,
     agent: string,
     entityKey?: string | null,
+    prompt?: string | null,
   ): number
+  getDispatch(dispatchId: number): DispatchRow | null
+  resetDispatch(dispatchId: number): void
   markRunning(dispatchId: number, sessionId: string): void
   markSucceeded(dispatchId: number): void
   markFailed(dispatchId: number, error: string): void
@@ -174,7 +178,47 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   try { db.exec("ALTER TABLE dispatches ADD COLUMN entity_key TEXT") } catch {}
   try { db.exec("ALTER TABLE dispatches ADD COLUMN outcome TEXT") } catch {}
   try { db.exec("ALTER TABLE deliveries ADD COLUMN skipped TEXT") } catch {}
+  try { db.exec("ALTER TABLE dispatches ADD COLUMN prompt TEXT") } catch {}
   db.exec("CREATE INDEX IF NOT EXISTS idx_dispatches_entity ON dispatches(entity_key)")
+
+  // Drop the UNIQUE(delivery_id, trigger_name) constraint so retries
+  // can create a new dispatch row for the same delivery+trigger combo.
+  // SQLite doesn't support DROP CONSTRAINT, so we recreate the table.
+  try {
+    const hasUnique = db
+      .prepare<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='dispatches'",
+      )
+      .get()
+    if (hasUnique?.sql?.includes("UNIQUE(delivery_id, trigger_name)")) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS dispatches_new (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          delivery_id   TEXT NOT NULL REFERENCES deliveries(delivery_id) ON DELETE CASCADE,
+          trigger_name  TEXT NOT NULL,
+          matched_event TEXT NOT NULL,
+          agent         TEXT NOT NULL,
+          session_id    TEXT,
+          status        TEXT NOT NULL CHECK (status IN ('pending','running','succeeded','failed','timeout')),
+          started_at    INTEGER NOT NULL,
+          completed_at  INTEGER,
+          error         TEXT,
+          entity_key    TEXT,
+          outcome       TEXT,
+          prompt        TEXT
+        );
+        INSERT INTO dispatches_new SELECT id, delivery_id, trigger_name, matched_event,
+          agent, session_id, status, started_at, completed_at, error, entity_key, outcome, prompt
+          FROM dispatches;
+        DROP TABLE dispatches;
+        ALTER TABLE dispatches_new RENAME TO dispatches;
+        CREATE INDEX IF NOT EXISTS idx_dispatches_delivery ON dispatches(delivery_id);
+        CREATE INDEX IF NOT EXISTS idx_dispatches_status   ON dispatches(status);
+        CREATE INDEX IF NOT EXISTS idx_dispatches_started  ON dispatches(started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_dispatches_entity   ON dispatches(entity_key);
+      `)
+    }
+  } catch {}
 
   const insertStmt = db.prepare<
     void,
@@ -191,10 +235,10 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
 
   const createDispatchStmt = db.prepare<
     void,
-    [string, string, string, string, string | null, number]
+    [string, string, string, string, string | null, string | null, number]
   >(
-    `INSERT INTO dispatches (delivery_id, trigger_name, matched_event, agent, entity_key, status, started_at)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+    `INSERT INTO dispatches (delivery_id, trigger_name, matched_event, agent, entity_key, prompt, status, started_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
   )
   const markRunningStmt = db.prepare<void, [string, number]>(
     `UPDATE dispatches SET status = 'running', session_id = ? WHERE id = ?`,
@@ -224,8 +268,19 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   )
   const getDispatchesStmt = db.prepare<DispatchRow, [string]>(
     `SELECT id, delivery_id, trigger_name, matched_event, agent, session_id,
-            status, started_at, completed_at, error, entity_key, outcome
+            status, started_at, completed_at, error, entity_key, outcome, prompt
      FROM dispatches WHERE delivery_id = ? ORDER BY started_at ASC, id ASC`,
+  )
+
+  const getDispatchStmt = db.prepare<DispatchRow, [number]>(
+    `SELECT id, delivery_id, trigger_name, matched_event, agent, session_id,
+            status, started_at, completed_at, error, entity_key, outcome, prompt
+     FROM dispatches WHERE id = ?`,
+  )
+
+  const resetDispatchStmt = db.prepare<void, [number, number]>(
+    `UPDATE dispatches SET status = 'pending', session_id = NULL, error = NULL,
+            outcome = NULL, completed_at = NULL, started_at = ? WHERE id = ?`,
   )
 
   const setOutcomeStmt = db.prepare<void, [string, number]>(
@@ -251,16 +306,23 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
       if (retention > 0) trimStmt.run(retention)
     },
 
-    createDispatch(deliveryId, triggerName, matchedEvent, agent, entityKey) {
+    createDispatch(deliveryId, triggerName, matchedEvent, agent, entityKey, prompt) {
       const res = createDispatchStmt.run(
         deliveryId,
         triggerName,
         matchedEvent,
         agent,
         entityKey ?? null,
+        prompt ?? null,
         Date.now(),
       )
       return Number(res.lastInsertRowid)
+    },
+    getDispatch(dispatchId) {
+      return getDispatchStmt.get(dispatchId) ?? null
+    },
+    resetDispatch(dispatchId) {
+      resetDispatchStmt.run(Date.now(), dispatchId)
     },
     markRunning(dispatchId, sessionId) {
       markRunningStmt.run(sessionId, dispatchId)
@@ -454,6 +516,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
       const events = db
         .prepare<EntityEventRow, [string]>(
           `SELECT
+             d.id,
              d.delivery_id,
              del.event,
              del.action,
@@ -476,6 +539,7 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
         entity_key: entityKey,
         session_id: es?.session_id ?? null,
         events: events.map((e) => ({
+          dispatch_id: e.id,
           delivery_id: e.delivery_id,
           event: e.event,
           action: e.action,
@@ -593,6 +657,7 @@ type EntityListRow = {
 }
 
 type EntityEventRow = {
+  id: number
   delivery_id: string
   event: string
   action: string | null

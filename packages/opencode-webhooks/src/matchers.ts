@@ -86,6 +86,7 @@ export function evaluateAndDispatch(opts: {
       opts.event,
       t.agent,
       entityKey?.key ?? null,
+      prompt,
     )
 
     if (entityKey) {
