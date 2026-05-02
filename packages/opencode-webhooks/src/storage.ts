@@ -179,6 +179,17 @@ export function openDeliveryStore(dbPath: string): DeliveryStore {
   try { db.exec("ALTER TABLE dispatches ADD COLUMN outcome TEXT") } catch {}
   try { db.exec("ALTER TABLE deliveries ADD COLUMN skipped TEXT") } catch {}
   try { db.exec("ALTER TABLE dispatches ADD COLUMN prompt TEXT") } catch {}
+
+  // The external_id column was added in the delivery_id refactor.
+  // Old DBs have delivery_id as the GitHub header value; new DBs use
+  // a generated UUID for delivery_id and store the header in
+  // external_id. Backfill from delivery_id for existing rows.
+  try {
+    db.exec("ALTER TABLE deliveries ADD COLUMN external_id TEXT")
+    db.exec("UPDATE deliveries SET external_id = delivery_id WHERE external_id IS NULL")
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_external_id ON deliveries(external_id)")
+    console.log("[opencode-webhooks] migration: added external_id column to deliveries")
+  } catch {}
   db.exec("CREATE INDEX IF NOT EXISTS idx_dispatches_entity ON dispatches(entity_key)")
 
   // Drop the UNIQUE(delivery_id, trigger_name) constraint so retries
