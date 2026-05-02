@@ -71,10 +71,7 @@ export function createApp(opts: {
       scope.setTag("http.method", method)
       scope.setTag("http.route", path)
 
-      const deliveryId =
-        c.req.header("x-github-delivery") ??
-        c.req.header("x-email-signature-256")?.slice(0, 12) ??
-        undefined
+      const deliveryId = c.req.header("x-github-delivery")
       if (deliveryId) {
         scope.setTag("delivery.id", deliveryId)
       }

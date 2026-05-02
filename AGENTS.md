@@ -13,7 +13,7 @@
 * **docker-entrypoint.sh skills bootstrap pattern**: Skills are baked into the image via Dockerfile \`COPY skills/ /home/developer/.config/opencode/skills/\` — no \`npx skills add\` calls at runtime. \`docker-entrypoint.sh\` does NOT run any skills bootstrap or cron scheduler; it only: chowns the dev volume if root-owned, inits git, configures \`gh auth setup-git\` + git user identity from \`gh api user\`, then \`exec opencode web\`. The webhook plugin (opencode-webhooks) loads in-process — there is no sidecar process.
 
 <!-- lore:019ddf82-a55d-747f-b14b-cb1efd6e4b8f -->
-* **Hono sidecar: webhook-to-agent dispatch pattern**: The opencode-webhooks plugin uses Hono (not raw Bun.serve) for routing inside the OpenCode server process. \`createApp()\` returns a \`Hono\<AppEnv>\` instance; deps are injected via \`use('\*')\` middleware into \`c.var\`. Routes: \`GET /healthz\`, \`POST /webhooks/github\`, \`POST /webhooks/email\`. Hono's \`fetch\` is passed to \`Bun.serve\`. \`Sentry.init()\` is called at startup if \`SENTRY\_DSN\` env var is set, and \`Sentry.close(2000)\` runs on SIGTERM/SIGINT. Pipeline (HMAC → dedup → trigger matching → dispatch) is unchanged \[\[019ddfd8-298f-79db-b305-68d5c5082d7e]].
+* **Hono sidecar: webhook-to-agent dispatch pattern**: opencode-webhooks Hono instrumentation: \`handler.ts\` \`createApp()\` returns \`Hono\<AppEnv>\`. \`app.onError\` captures unhandled route throws to Sentry. \`app.use('\*')\` middleware wraps each request in \`Sentry.withIsolationScope\` + \`Sentry.startSpan({ op: 'http.server' })\`, setting tags: \`http.method\`, \`http.route\`, \`delivery.id\`, \`github.event\`. Span status set from \`c.res.status\`. Deps injected on \`app.use('/webhooks/\*')\` only (healthz excluded). Routes: \`GET /healthz\`, \`POST /webhooks/github\`, \`POST /webhooks/email\`. \[\[019ddfd8-298f-79db-b305-68d5c5082d7e]]
 
 <!-- lore:019ddb97-583c-7303-8d84-01bb358bcc86 -->
 * **OpenCode skills loaded from filesystem, not from opencode.json**: Skills are discovered from filesystem paths (\`~/.config/opencode/skills/\<name>/SKILL.md\` globally, \`.opencode/skills/\<name>/SKILL.md\` project-locally). The \`opencode.json\` config only controls \`permission.skill.\*\` entries to allow/deny/ask per skill name pattern. There is no \`skills\` declaration in the config file itself.
@@ -25,7 +25,7 @@
 * **opencode-webhooks plugin: zero npm runtime deps, raw TS, no build step**: \`packages/opencode-webhooks/src/\` ships raw \`.ts\` files with no build step. Runtime dependencies: \`hono ^4.0.0\` and \`@sentry/bun ^9.0.0\`. Dev deps: \`@opencode-ai/plugin\`, \`@types/bun\`, \`typescript\`. Uses Bun built-ins (\`Bun.serve\`, \`Bun.spawn\`, \`Bun.file\`, \`bun:sqlite\`) and Node built-ins (\`node:crypto\`, \`node:os\`, \`node:fs\`, \`node:path\`). \`exports\` points to \`./src/index.ts\` — Bun loads TS natively at runtime.
 
 <!-- lore:019de5eb-d81e-7bf8-b924-30fe9b7552b7 -->
-* **opencode-webhooks Sentry integration: init at plugin boot, DSN from env**: \`index.ts\` calls \`Sentry.init({ dsn: process.env.SENTRY\_DSN })\` at plugin startup if \`SENTRY\_DSN\` is set; init is skipped (no-op) when the var is absent. \`Sentry.close(2000)\` is called during the graceful shutdown path alongside \`server.stop(true)\`. The \`@sentry/bun\` package is a runtime dep in \`packages/opencode-webhooks/package.json\`. Add \`SENTRY\_DSN=\` to \`.env\` (documented in \`.env.example\`) to activate.
+* **opencode-webhooks Sentry integration: init at plugin boot, DSN from env**: Sentry init in \`index.ts\`: \`tracesSampleRate\` defaults to 0.1 (override via \`SENTRY\_TRACES\_SAMPLE\_RATE\` env), \`sendDefaultPii: true\`. After resolving bot identity, \`Sentry.setTag('bot.login', botLogin)\` on the global scope tags all events with the deployment's identity. \`Sentry.close(2000)\` on SIGTERM/SIGINT flushes pending events. \`process.on('unhandledRejection')\` captures escaping errors. \`SENTRY\_TRACES\_SAMPLE\_RATE\` documented in \`.env.example\`.
 
 <!-- lore:019ddf9b-acf0-76f3-8a33-44a1d0d48fb4 -->
 * **Plugin dependencies: package.json at ~/.config/opencode/ (not inside plugins/)**: OpenCode runs \`bun install\` at startup using a \`package.json\` at the config directory root (\`~/.config/opencode/package.json\`), not inside the \`plugins/\` subdirectory. Placing \`package.json\` inside \`plugins/\` will not resolve imports. In the image, \`opencode-config-package.json\` in the repo is COPYed to \`~/.config/opencode/package.json\` at build time.
@@ -55,4 +55,9 @@
 
 <!-- lore:019ddf82-a571-7ee4-ad93-8e3039df4ea8 -->
 * **Sidecar cold-boot race: opencode not ready when first webhook arrives**: Cold-boot race is eliminated when using a plugin architecture: the plugin starts after OpenCode's server is ready (it's loaded during server init, not in parallel). The race only applies to the sidecar pattern (separate process). If using a plugin with its own \`Bun.serve\` listener, no readiness polling or retry logic is needed.
+
+### Pattern
+
+<!-- lore:019de622-bdfa-7267-9101-3c11dceb04e1 -->
+* **Dispatch errors reported to Sentry with trigger/delivery tags via withScope**: In \`dispatch.ts\`, the catch block wraps \`Sentry.captureException(err)\` in \`Sentry.withScope()\` to attach \`trigger.name\`, \`trigger.event\`, and \`delivery.id\` tags scoped only to that error event. This avoids polluting the isolation scope of concurrent requests. Pattern: \`Sentry.withScope(scope => { scope.setTag(...); Sentry.captureException(err) })\`.
 <!-- End lore-managed section -->

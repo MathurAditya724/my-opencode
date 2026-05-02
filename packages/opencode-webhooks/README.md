@@ -111,6 +111,7 @@ If `gh` isn't installed or `GH_TOKEN` isn't set, identity-gated triggers refuse 
 | `WEBHOOK_PORT` | Override listener port (default 5050). |
 | `WEBHOOKS_CONFIG` | Path to `webhooks.json` (default `~/.config/opencode/webhooks.json`). |
 | `SENTRY_DSN` | Sentry DSN for error tracking. If set, `Sentry.init()` is called at plugin startup and unhandled rejections are captured. |
+| `SENTRY_TRACES_SAMPLE_RATE` | Fraction of requests traced (0.0–1.0). Default 0.1. Set to 1.0 for debugging, 0 to disable tracing. |
 
 ## Health check
 

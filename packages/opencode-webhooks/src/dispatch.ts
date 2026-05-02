@@ -60,6 +60,7 @@ export function makeDispatcher(opts: {
         `[opencode-webhooks] trigger '${t.name}' (${deliveryId}) failed:`,
         err,
       )
+      // withScope (not withIsolationScope) — dispatch runs outside any HTTP request scope
       Sentry.withScope((scope) => {
         scope.setTag("trigger.name", t.name)
         scope.setTag("trigger.event", t.event)

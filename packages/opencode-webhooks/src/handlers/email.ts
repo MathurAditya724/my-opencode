@@ -35,6 +35,8 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "no email HMAC secret configured on server" }, 503)
   }
 
+  // Read body as raw bytes for HMAC verification — must match the
+  // exact bytes the worker signed, not a re-serialized version.
   const body = await readBodyBytes(c.req.raw, MAX_EMAIL_BODY_BYTES)
   if (!body.ok) return body.response
 
@@ -60,6 +62,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "missing 'message_id' in event" }, 400)
   }
 
+  // Defense-in-depth: re-check the email worker's ALLOWED_SENDERS.
   if (allowlist.length > 0 && !matchesAllowlist(event.from, allowlist)) {
     return c.json(
       { error: "sender not in allowlist", from: extractAddress(event.from) },
@@ -67,6 +70,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     )
   }
 
+  // Self-loop guard: drop emails triggered by the bot's own activity.
   const ghSender = event.x_github_sender
   if (
     botLogin &&
@@ -94,6 +98,8 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   const triggerEvent = `email.${reason}`
   const dedupKey = `email:${event.message_id}`
 
+  // Synthesize BEFORE dedup — gh api fetch is idempotent, and we
+  // need the payload to evaluate payload_filter on the triggers.
   const synth = await synthesizePayload(identity, event, reason)
   if (!synth.ok) {
     return c.json({
@@ -103,6 +109,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     })
   }
 
+  // Idempotency: dedup by Message-ID.
   const inserted = store.insert(dedupKey, triggerEvent, null)
   if (inserted) store.trim(retention)
   if (!inserted) {

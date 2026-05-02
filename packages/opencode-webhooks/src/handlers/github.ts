@@ -20,6 +20,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "no HMAC secret configured on server" }, 503)
   }
 
+  // GitHub always sends both headers; refuse otherwise.
   const event = c.req.header("x-github-event")
   const deliveryId = c.req.header("x-github-delivery")
   if (!event || !deliveryId) {
@@ -48,6 +49,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     // Not JSON — dispatch with empty payload.
   }
 
+  // Idempotency: dedup by X-GitHub-Delivery.
   const inserted = store.insert(deliveryId, event, action)
   if (inserted) store.trim(retention)
   if (!inserted) {

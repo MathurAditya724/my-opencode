@@ -38,9 +38,10 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       sendDefaultPii: true,
       // Default to 10% of requests traced in production. Override via
       // SENTRY_TRACES_SAMPLE_RATE env var (0.0–1.0).
-      tracesSampleRate: Number(
-        process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1",
-      ),
+      tracesSampleRate: (() => {
+        const rate = Number(process.env.SENTRY_TRACES_SAMPLE_RATE)
+        return Number.isFinite(rate) ? rate : 0.1
+      })(),
     })
     console.log("[opencode-webhooks] Sentry initialized")
   }
