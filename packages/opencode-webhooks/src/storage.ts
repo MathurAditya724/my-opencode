@@ -44,13 +44,11 @@ export type DispatchRow = {
 }
 
 export type LifecycleStore = {
-  getEntity(entityKey: string): EntityRow | null
   upsertEntity(row: Pick<EntityRow, "entity_key" | "repo" | "number" | "kind" | "session_id" | "agent">): void
   deleteEntity(entityKey: string): void
   resolveSession(entityKey: string): EntityRow | null
 
   addLink(sourceKey: string, targetKey: string, relation: string): void
-  getLinks(entityKey: string): LinkRow[]
 
   insertDispatch(row: Omit<DispatchRow, "created_at" | "completed_at">): void
   completeDispatch(id: string, status: "completed" | "failed" | "timeout"): void
@@ -138,10 +136,6 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
   }
 
   return {
-    getEntity(entityKey) {
-      return stmts.getEntity.get(entityKey) ?? null
-    },
-
     upsertEntity(row) {
       stmts.upsertEntity.run({
         $entity_key: row.entity_key,
@@ -188,12 +182,6 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
         $target_key: targetKey,
         $relation: relation,
       })
-    },
-
-    getLinks(entityKey) {
-      const asSource = stmts.getLinksBySource.all(entityKey)
-      const asTarget = stmts.getLinksByTarget.all(entityKey)
-      return [...asSource, ...asTarget]
     },
 
     insertDispatch(row) {

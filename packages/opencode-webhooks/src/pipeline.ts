@@ -48,14 +48,13 @@ export type Pipeline = {
     prompt: string,
     deliveryId: string,
     matchedEvent: string,
-  ): boolean
+  ): void
   dispatchNoAffinity(
     trigger: NormalizedTrigger,
     prompt: string,
     deliveryId: string,
     matchedEvent: string,
   ): void
-  getSessionId(entityKey: string): string | null
 }
 
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000
@@ -91,6 +90,11 @@ export function makePipeline(opts: {
 
   function resetIdleTimer(entry: SessionEntry): void {
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
+    // Replace the AbortController so follow-ups get a fresh signal.
+    // The previous abortTimer may still be live; clear it to prevent
+    // it from aborting the new controller.
+    clearTimeout(entry.abortTimer)
+    entry.abort = new AbortController()
     entry.idleTimer = setTimeout(() => {
       Sentry.logger.info("session.idle_timeout", {
         entity_key: entry.entityKey,
@@ -235,6 +239,7 @@ export function makePipeline(opts: {
   async function resumeAndPrompt(
     entry: SessionEntry,
     entityKey: EntityKey,
+    persistedEntityKey: string,
     trigger: NormalizedTrigger,
     prompt: string,
     deliveryId: string,
@@ -299,7 +304,12 @@ export function makePipeline(opts: {
           entity_key: entry.entityKey,
           session_id: entry.sessionId,
         })
-        store.deleteEntity(entityKey.key)
+        // Delete the entity that owns the stale session — may differ
+        // from entityKey.key when resolved via a link.
+        store.deleteEntity(persistedEntityKey)
+        if (persistedEntityKey !== entityKey.key) {
+          store.deleteEntity(entityKey.key)
+        }
         clearTimeout(entry.abortTimer)
         sessions.delete(entry.entityKey)
         // Balance the drainCounter.start() from this resumeAndPrompt
@@ -348,6 +358,20 @@ export function makePipeline(opts: {
     entry.abortTimer = setTimeout(() => entry.abort.abort(), timeoutMs)
     entry.abortTimer.unref?.()
 
+    const dispatchIds = events.map((ev) => {
+      const id = crypto.randomUUID()
+      store.insertDispatch({
+        id,
+        entity_key: entry.entityKey,
+        session_id: entry.sessionId,
+        trigger_name: ev.trigger.name,
+        event: ev.matchedEvent,
+        delivery_id: ev.deliveryId,
+        status: "started",
+      })
+      return id
+    })
+
     entry.busy = true
     await semaphore.acquire()
     try {
@@ -371,6 +395,7 @@ export function makePipeline(opts: {
             signal: entry.abort.signal,
           })
 
+          for (const id of dispatchIds) store.completeDispatch(id, "completed")
           Sentry.logger.info("dispatch.followup_completed", {
             entity_key: entry.entityKey,
             session_id: entry.sessionId,
@@ -381,6 +406,7 @@ export function makePipeline(opts: {
       )
     } catch (err) {
       const status = entry.abort.signal.aborted ? "timeout" : "failed"
+      for (const id of dispatchIds) store.completeDispatch(id, status as "timeout" | "failed")
       Sentry.logger.error("dispatch.followup_failed", {
         entity_key: entry.entityKey,
         session_id: entry.sessionId,
@@ -580,10 +606,10 @@ export function makePipeline(opts: {
             queue_depth: existing.queue.length,
             trigger_name: trigger.name,
           })
-          return true
+          return
         }
         void followUp(existing, [{ trigger, prompt, deliveryId, matchedEvent }])
-        return true
+        return
       }
 
       // 2. Check the lifecycle store for a persisted session (cold path:
@@ -612,8 +638,8 @@ export function makePipeline(opts: {
           original_entity: persisted.entity_key,
         })
 
-        void resumeAndPrompt(entry, entityKey, trigger, prompt, deliveryId, matchedEvent)
-        return true
+        void resumeAndPrompt(entry, entityKey, persisted.entity_key, trigger, prompt, deliveryId, matchedEvent)
+        return
       }
 
       // 3. No existing session — create a new one.
@@ -633,19 +659,10 @@ export function makePipeline(opts: {
       }
       sessions.set(entityKey.key, entry)
       void createAndPrompt(entry, entityKey, trigger, prompt, deliveryId, matchedEvent)
-      return true
     },
 
     dispatchNoAffinity(trigger, prompt, deliveryId, matchedEvent) {
       void fireAndForget(trigger, prompt, deliveryId, matchedEvent)
-    },
-
-    getSessionId(entityKey) {
-      // Check in-memory first, fall back to DB.
-      const mem = sessions.get(entityKey)?.sessionId
-      if (mem) return mem
-      const row = store.resolveSession(entityKey)
-      return row?.session_id ?? null
     },
   }
 }
