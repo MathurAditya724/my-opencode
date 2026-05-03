@@ -75,5 +75,18 @@ export function extractEntityKey(
     return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
   }
 
+  // workflow_run.* -- extract from pull_requests array (same shape as check_suite)
+  if (event === "workflow_run") {
+    const prs = lookup(payload, "workflow_run.pull_requests")
+    if (!Array.isArray(prs) || prs.length === 0) return null
+    const first = prs[0] as Record<string, unknown>
+    const num = first?.number
+    if (typeof num !== "number") return null
+    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
+  }
+
+  // push -- no single entity; dispatched via fire-and-forget (returns null)
+  // The agent can inspect the payload to correlate with issues/PRs.
+
   return null
 }

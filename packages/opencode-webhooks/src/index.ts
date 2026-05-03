@@ -10,6 +10,7 @@ import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
 import { makeDedup } from "./dedup"
 import { createApp } from "./handler"
+import { makeMetrics } from "./metrics"
 import { makePipeline } from "./pipeline"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
 export type {
@@ -106,6 +107,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const dedup = makeDedup()
     const semaphore = makeSemaphore(maxConcurrent)
     const drainCounter = makeDrainCounter()
+    const metrics = makeMetrics()
     const pipeline = makePipeline({
       client: ctx.client,
       defaultCwd,
@@ -113,6 +115,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       semaphore,
       drainCounter,
       batchWindowMs,
+      metrics,
     })
 
     const app = createApp({
@@ -121,6 +124,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       triggers,
       dedup,
       pipeline,
+      metrics,
       botLogin,
     })
 
