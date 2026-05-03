@@ -1,11 +1,11 @@
 // Cloudflare Email Worker: dumb pipe in front of opencode-webhooks.
 //
 // Pipeline per inbound email:
-//   1. If sender is not FORWARD_TO or in ALLOWED_EMAILS:
+//   1. If sender is not FORWARD_TO and not in ALLOWED_EMAILS:
 //      message.forward(FORWARD_TO). Skipped when the sender IS one of
-//      those addresses to prevent a loop.
+//      those addresses to prevent a loop / re-send.
 //   2. If message.from is in ALLOWED_SENDERS, matches FORWARD_TO, or
-//      matches ALLOWED_EMAILS, read the raw RFC822 message, extract
+//      is in ALLOWED_EMAILS: read the raw RFC822 message, extract
 //      plain-text and HTML body parts, build a JSON event with headers
 //      + body, HMAC-sign it, and POST to WEBHOOK_URL.
 //   3. On 5xx from the webhook, throw so Cloudflare retries the email.
@@ -31,12 +31,11 @@ export interface Env {
   // from the operator's inbox trigger the agent) and are NOT forwarded
   // back (prevents loop).
   FORWARD_TO?: string
-  // Optional. Comma-separated email addresses that are treated like
-  // FORWARD_TO: allowed through the webhook gate (dispatched to the
-  // agent) and NOT forwarded back (prevents loop). Set via
-  // `wrangler secret put ALLOWED_EMAILS`.
-  //
-  // Example: "alice@example.com,bob@corp.dev"
+  // Optional. Comma-separated list of email addresses that are treated
+  // exactly like FORWARD_TO: emails from these senders are NOT
+  // forwarded back and are auto-allowed through the webhook gate.
+  // Useful for additional operator inboxes that should reach the agent
+  // without being re-sent. Set via `wrangler secret put ALLOWED_EMAILS`.
   ALLOWED_EMAILS?: string
 }
 
@@ -46,29 +45,21 @@ type Pattern =
 
 const COMPILED_PATTERNS: Pattern[] = compilePatterns(ALLOWED_SENDERS)
 
-function parseAllowedEmails(raw: string | undefined): Set<string> {
-  if (!raw) return new Set()
-  return new Set(
-    raw
-      .split(",")
-      .map((s) => extractAddress(s.trim()).toLowerCase())
-      .filter(Boolean),
-  )
-}
-
 export default {
   async email(message, env, _ctx) {
     const messageId = message.headers.get("message-id") ?? ""
     const senderAddr = extractAddress(message.from).toLowerCase()
     const forwardTo = extractAddress(env.FORWARD_TO ?? "").toLowerCase()
-    const allowedEmails = parseAllowedEmails(env.ALLOWED_EMAILS)
     const isFromForwardTo = forwardTo !== "" && senderAddr === forwardTo
+
+    // Parse ALLOWED_EMAILS: comma-separated addresses treated like
+    // FORWARD_TO (no re-send, auto-allowed for webhook).
+    const allowedEmails = parseAllowedEmails(env.ALLOWED_EMAILS)
     const isFromAllowedEmail = allowedEmails.has(senderAddr)
-    const isFromTrustedSender = isFromForwardTo || isFromAllowedEmail
 
     // 1. Forward to the operator's inbox -- unless the email came FROM
-    //    FORWARD_TO or an ALLOWED_EMAILS address (prevents loop).
-    if (env.FORWARD_TO && !isFromTrustedSender) {
+    //    the FORWARD_TO address or one of the ALLOWED_EMAILS addresses.
+    if (env.FORWARD_TO && !isFromForwardTo && !isFromAllowedEmail) {
       try {
         await message.forward(env.FORWARD_TO)
       } catch (err) {
@@ -80,7 +71,7 @@ export default {
 
     // 2. Webhook gate: allowlisted senders, FORWARD_TO replies, or
     //    ALLOWED_EMAILS addresses.
-    if (!isFromTrustedSender && !matchesAnyPattern(message.from, COMPILED_PATTERNS)) {
+    if (!isFromForwardTo && !isFromAllowedEmail && !matchesAnyPattern(message.from, COMPILED_PATTERNS)) {
       console.log(
         `webhook skipped: from=${message.from} (not in allowlist)`,
       )
@@ -301,6 +292,16 @@ function matchesAnyPattern(from: string, patterns: Pattern[]): boolean {
 function extractAddress(from: string): string {
   const m = from.match(/<([^>]+)>/)
   return (m ? m[1] : from).trim()
+}
+
+function parseAllowedEmails(raw: string | undefined): Set<string> {
+  if (!raw) return new Set()
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  )
 }
 
 async function hmacSha256Hex(
