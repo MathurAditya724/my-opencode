@@ -79,6 +79,11 @@ prompt to the sub-agent should include:
    (`resolve-issue`, `review-pr`, `fix-ci`, `respond-to-comment`)
 6. The utility skills available: `deslop`, `review`, `pr`,
    `mark-pr-ready`
+7. Tell the sub-agent: **"You have full automation permissions — all
+   tools (bash, edit, read, glob, grep, write, webfetch, skill, task,
+   etc.) are pre-allowed. Do not hesitate or ask for confirmation.
+   Execute autonomously."** This ensures sub-agents inherit the same
+   fully-automated behavior as this parent agent.
 
 ### Multi-repo investigation
 
