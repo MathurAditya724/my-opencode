@@ -18,7 +18,6 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
 import type { EntityKey } from "./entity"
-import type { Metrics } from "./metrics"
 import type { DrainCounter, Semaphore } from "./semaphore"
 import type { NormalizedTrigger } from "./types"
 
@@ -67,7 +66,6 @@ export function makePipeline(opts: {
   semaphore: Semaphore
   drainCounter: DrainCounter
   batchWindowMs?: number
-  metrics?: Metrics
 }): Pipeline {
   const {
     client,
@@ -76,7 +74,6 @@ export function makePipeline(opts: {
     semaphore,
     drainCounter,
     batchWindowMs = 5_000,
-    metrics,
   } = opts
 
   const sessions = new Map<string, SessionEntry>()
@@ -86,7 +83,6 @@ export function makePipeline(opts: {
     if (entry.batchTimer) clearTimeout(entry.batchTimer)
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
     sessions.delete(entry.entityKey)
-    metrics?.gauge("sessions.active", sessions.size)
     drainCounter.end()
   }
 
@@ -109,8 +105,6 @@ export function makePipeline(opts: {
     deliveryId: string,
     matchedEvent: string,
   ): Promise<void> {
-    const startTime = Date.now()
-    metrics?.inc("dispatch.started", { trigger: trigger.name, event: matchedEvent })
     drainCounter.start()
     await semaphore.acquire()
     try {
@@ -187,14 +181,11 @@ export function makePipeline(opts: {
         },
       )
     } catch (err) {
-      metrics?.inc("dispatch.failed", { trigger: trigger.name, event: matchedEvent })
       handleError(entry, err, deliveryId, matchedEvent, trigger)
       return
     } finally {
       semaphore.release()
     }
-    metrics?.inc("dispatch.completed", { trigger: trigger.name, event: matchedEvent })
-    metrics?.timing("dispatch.duration_ms", Date.now() - startTime)
     entry.busy = false
     flushQueue(entry)
   }
@@ -204,8 +195,6 @@ export function makePipeline(opts: {
     events: QueuedEvent[],
   ): Promise<void> {
     if (events.length === 0) return
-    const startTime = Date.now()
-    metrics?.inc("dispatch.followup", { entity: entry.entityKey })
     const prompt = events.length === 1
       ? events[0].prompt
       : formatBatchPrompt(events)
@@ -254,7 +243,6 @@ export function makePipeline(opts: {
         status,
         error: formatError(err),
       })
-      metrics?.inc("dispatch.followup_failed", { entity: entry.entityKey })
       reportError(entry, err, events[0].deliveryId, events[0].matchedEvent, events[0].trigger)
       entry.queue.length = 0
       cleanup(entry)
@@ -262,7 +250,6 @@ export function makePipeline(opts: {
     } finally {
       semaphore.release()
     }
-    metrics?.timing("dispatch.followup_duration_ms", Date.now() - startTime)
     entry.busy = false
     flushQueue(entry)
   }
@@ -329,8 +316,6 @@ export function makePipeline(opts: {
     deliveryId: string,
     matchedEvent: string,
   ): Promise<void> {
-    const startTime = Date.now()
-    metrics?.inc("dispatch.fire_and_forget", { trigger: trigger.name, event: matchedEvent })
     drainCounter.start()
     await semaphore.acquire()
     const abort = new AbortController()
@@ -400,7 +385,6 @@ export function makePipeline(opts: {
       )
     } catch (err) {
       const status = abort.signal.aborted ? "timeout" : "failed"
-      metrics?.inc("dispatch.fire_and_forget_failed", { trigger: trigger.name, status })
       Sentry.logger.error("dispatch.failed", {
         trigger_name: trigger.name,
         delivery_id: deliveryId,
@@ -413,13 +397,11 @@ export function makePipeline(opts: {
         scope.setTag("delivery.id", deliveryId)
         Sentry.captureException(err)
       })
-      return
     } finally {
       clearTimeout(timer)
       semaphore.release()
       drainCounter.end()
     }
-    metrics?.timing("dispatch.fire_and_forget_duration_ms", Date.now() - startTime)
   }
 
   return {
@@ -432,10 +414,6 @@ export function makePipeline(opts: {
         }
         if (existing.busy) {
           existing.queue.push({ trigger, prompt, deliveryId, matchedEvent })
-          metrics?.inc("dispatch.queued", { trigger: trigger.name })
-          let totalQueued = 0
-          for (const s of sessions.values()) totalQueued += s.queue.length
-          metrics?.gauge("queue.depth", totalQueued)
           Sentry.logger.info("dispatch.queued", {
             entity_key: entityKey.key,
             session_id: existing.sessionId,
@@ -463,7 +441,6 @@ export function makePipeline(opts: {
         idleTimer: null,
       }
       sessions.set(entityKey.key, entry)
-      metrics?.gauge("sessions.active", sessions.size)
       void createAndPrompt(entry, trigger, prompt, deliveryId, matchedEvent)
       return true
     },

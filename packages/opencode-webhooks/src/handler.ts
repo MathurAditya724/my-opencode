@@ -6,7 +6,6 @@ import * as Sentry from "@sentry/bun"
 import type { Dedup } from "./dedup"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
-import type { Metrics } from "./metrics"
 import type { Pipeline } from "./pipeline"
 import type { NormalizedTrigger } from "./types"
 
@@ -16,7 +15,6 @@ export type AppEnv = {
     emailSecret: string
     dedup: Dedup
     pipeline: Pipeline
-    metrics: Metrics
     botLogin: string | null
     githubTriggers: NormalizedTrigger[]
     emailTriggers: NormalizedTrigger[]
@@ -29,7 +27,6 @@ export function createApp(opts: {
   triggers: NormalizedTrigger[]
   dedup: Dedup
   pipeline: Pipeline
-  metrics: Metrics
   botLogin: string | null
 }): Hono<AppEnv> {
   const githubTriggers = opts.triggers.filter(
@@ -47,10 +44,6 @@ export function createApp(opts: {
 
   app.get("/healthz", (c) => {
     return c.json({ ok: true, plugin: "opencode-webhooks" })
-  })
-
-  app.get("/metrics", (c) => {
-    return c.json(opts.metrics.snapshot())
   })
 
   // Sentry middleware: isolate each request into its own scope.
@@ -94,7 +87,6 @@ export function createApp(opts: {
     c.set("emailSecret", opts.emailSecret)
     c.set("dedup", opts.dedup)
     c.set("pipeline", opts.pipeline)
-    c.set("metrics", opts.metrics)
     c.set("botLogin", opts.botLogin)
     c.set("githubTriggers", githubTriggers)
     c.set("emailTriggers", emailTriggers)
