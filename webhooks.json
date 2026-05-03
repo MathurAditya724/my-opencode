@@ -7,7 +7,9 @@
       "event": [
         "issues",
         "pull_request",
-        "check_suite"
+        "check_suite",
+        "workflow_run",
+        "push"
       ],
       "agent": "github-agent",
       "prompt_template": "A GitHub webhook just arrived. Read the payload and decide what to do.\n\nEvent: {{ event }}\nAction: {{ action }}\nDelivery: {{ delivery_id }}\n\nPayload:\n{{ payload }}"

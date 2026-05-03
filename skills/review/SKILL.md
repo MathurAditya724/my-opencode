@@ -27,7 +27,13 @@ a subagent, post a review on GitHub, or both.
    `task` tool) to do the read pass. The explore agent is read-only and
    doesn't carry the implementation's "obvious in context" bias.
 
-3. Read every change against the PR's stated intent (PR body + linked
+3. If a test suite exists, run it to verify the changes don't break
+   anything. Check `package.json` scripts, `Makefile`, `pytest.ini`,
+   `go.mod`, or CI workflow files for the test command. If tests fail
+   on code unrelated to the diff, note it but don't flag it. If tests
+   fail on changed code, add a `bug` finding.
+
+4. Read every change against the PR's stated intent (PR body + linked
    issues via `gh issue view`). For each concern, classify it:
 
    - **bug** — logic doesn't match intent, broken edge case (null,
