@@ -2,6 +2,9 @@
 // is the natural "thing being worked on": owner/repo#N where N is the
 // issue or PR number. All events related to the same issue or PR share
 // the same entity key, enabling session affinity.
+//
+// Also extracts linked issue numbers from PR bodies so the lifecycle
+// store can link issue→PR for session reuse.
 
 import { lookup, lookupString } from "./template"
 
@@ -11,6 +14,9 @@ export type EntityKey = {
   repo: string
   number: number
   kind: "issue" | "pull_request"
+  // Issue numbers referenced by "Fixes #N" / "Closes #N" in a PR body.
+  // Only populated for pull_request events.
+  linkedIssues: number[]
 }
 
 // Extract entity key from a GitHub webhook payload.
@@ -34,35 +40,38 @@ export function extractEntityKey(
     const num = lookup(payload, "issue.number")
     if (typeof num !== "number") return null
     const isPR = lookup(payload, "issue.pull_request") != null
-    return { key: `${repo}#${num}`, repo, number: num, kind: isPR ? "pull_request" : "issue" }
+    return { key: `${repo}#${num}`, repo, number: num, kind: isPR ? "pull_request" : "issue", linkedIssues: [] }
   }
 
   // issues.*
   if (event === "issues") {
     const num = lookup(payload, "issue.number")
     if (typeof num !== "number") return null
-    return { key: `${repo}#${num}`, repo, number: num, kind: "issue" }
+    return { key: `${repo}#${num}`, repo, number: num, kind: "issue", linkedIssues: [] }
   }
 
   // pull_request.*
   if (event === "pull_request") {
     const num = lookup(payload, "pull_request.number")
     if (typeof num !== "number") return null
-    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
+    const body = lookupString(payload, "pull_request.body") ?? ""
+    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request", linkedIssues: extractLinkedIssues(body) }
   }
 
   // pull_request_review_comment.*
   if (event === "pull_request_review_comment") {
     const num = lookup(payload, "pull_request.number")
     if (typeof num !== "number") return null
-    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
+    const body = lookupString(payload, "pull_request.body") ?? ""
+    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request", linkedIssues: extractLinkedIssues(body) }
   }
 
   // pull_request_review.*
   if (event === "pull_request_review") {
     const num = lookup(payload, "pull_request.number")
     if (typeof num !== "number") return null
-    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
+    const body = lookupString(payload, "pull_request.body") ?? ""
+    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request", linkedIssues: extractLinkedIssues(body) }
   }
 
   // check_suite.* -- extract from pull_requests array
@@ -72,7 +81,7 @@ export function extractEntityKey(
     const first = prs[0] as Record<string, unknown>
     const num = first?.number
     if (typeof num !== "number") return null
-    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
+    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request", linkedIssues: [] }
   }
 
   // workflow_run.* -- extract from pull_requests array (same shape as check_suite)
@@ -82,11 +91,25 @@ export function extractEntityKey(
     const first = prs[0] as Record<string, unknown>
     const num = first?.number
     if (typeof num !== "number") return null
-    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request" }
+    return { key: `${repo}#${num}`, repo, number: num, kind: "pull_request", linkedIssues: [] }
   }
 
   // push -- no single entity; dispatched via fire-and-forget (returns null)
   // The agent can inspect the payload to correlate with issues/PRs.
 
   return null
+}
+
+// Extract issue numbers from "Fixes #N", "Closes #N", "Resolves #N"
+// patterns in PR bodies. GitHub uses these for auto-close linking.
+const LINKED_ISSUE_RE = /(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)/gi
+
+export function extractLinkedIssues(body: string): number[] {
+  const nums = new Set<number>()
+  let m: RegExpExecArray | null
+  while ((m = LINKED_ISSUE_RE.exec(body)) !== null) {
+    nums.add(Number(m[1]))
+  }
+  LINKED_ISSUE_RE.lastIndex = 0
+  return [...nums]
 }

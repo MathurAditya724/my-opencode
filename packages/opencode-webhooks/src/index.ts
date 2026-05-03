@@ -6,12 +6,15 @@
 
 import type { Plugin } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
 import { makeDedup } from "./dedup"
 import { createApp } from "./handler"
 import { makePipeline } from "./pipeline"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
+import { openLifecycleStore } from "./storage"
 export type {
   Trigger,
   TriggerSource,
@@ -106,12 +109,19 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const dedup = makeDedup()
     const semaphore = makeSemaphore(maxConcurrent)
     const drainCounter = makeDrainCounter()
+
+    const dbPath = process.env.LIFECYCLE_DB_PATH
+      ?? join(homedir(), "dev", ".opencode", "lifecycle.db")
+    const store = openLifecycleStore(dbPath)
+    console.log(`[opencode-webhooks] lifecycle store opened at ${dbPath}`)
+
     const pipeline = makePipeline({
       client: ctx.client,
       defaultCwd,
       timeoutMs,
       semaphore,
       drainCounter,
+      store,
       batchWindowMs,
     })
 
@@ -157,6 +167,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
           `[opencode-webhooks] drain timeout after ${drainTimeoutMs}ms -- ${drainCounter.inFlight()} dispatch(es) still in flight`,
         )
       }
+      store.close()
       await Sentry.close(2000)
     }
     process.once("SIGTERM", () => void onShutdown("SIGTERM"))
