@@ -433,7 +433,9 @@ export function makePipeline(opts: {
         if (existing.busy) {
           existing.queue.push({ trigger, prompt, deliveryId, matchedEvent })
           metrics?.inc("dispatch.queued", { trigger: trigger.name })
-          metrics?.gauge("queue.depth", existing.queue.length)
+          let totalQueued = 0
+          for (const s of sessions.values()) totalQueued += s.queue.length
+          metrics?.gauge("queue.depth", totalQueued)
           Sentry.logger.info("dispatch.queued", {
             entity_key: entityKey.key,
             session_id: existing.sessionId,

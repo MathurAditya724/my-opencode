@@ -21,25 +21,34 @@ and self-review found no remaining issues.
 
 1. Verify CI status:
    ```sh
-   gh pr checks <N> --required --json name,state \
-     --jq '[.[] | select(.state != "SUCCESS" and .state != "SKIPPED")]'
+   FAILING=$(gh pr checks <N> --json name,state \
+     --jq '[.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL")]')
    ```
-   If any required checks are not SUCCESS/SKIPPED, stop — CI isn't
-   green yet.
+   If the output is not an empty array `[]`, stop — CI isn't green yet.
 
 2. Mark ready for review:
    ```sh
    gh pr ready <N>
    ```
 
-3. Assign reviewers from CODEOWNERS (if the file exists):
+3. Request reviewers. GitHub auto-assigns from CODEOWNERS when a
+   draft PR is marked ready (if branch protection requires reviews),
+   so explicit assignment is often unnecessary. If the repo doesn't
+   use branch protection, try to find an owner:
    ```sh
-   if [ -f CODEOWNERS ] || [ -f .github/CODEOWNERS ] || [ -f docs/CODEOWNERS ]; then
-     gh pr edit <N> --add-reviewer "$(gh api repos/<owner>/<repo>/pulls/<N>/requested_reviewers --jq '.users[].login' 2>/dev/null || true)"
+   CODEOWNERS_FILE=""
+   for f in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
+     [ -f "$f" ] && CODEOWNERS_FILE="$f" && break
+   done
+   if [ -n "$CODEOWNERS_FILE" ]; then
+     OWNERS=$(grep -v '^#' "$CODEOWNERS_FILE" | awk '{for(i=2;i<=NF;i++) print $i}' | sort -u | head -3)
+     for owner in $OWNERS; do
+       owner="${owner#@}"
+       gh pr edit <N> --add-reviewer "$owner" 2>/dev/null || true
+     done
    fi
    ```
-   If CODEOWNERS doesn't exist or reviewer assignment fails, skip
-   silently — GitHub may auto-assign via branch protection rules.
+   If reviewer assignment fails, skip silently.
 
 4. Add labels:
    ```sh

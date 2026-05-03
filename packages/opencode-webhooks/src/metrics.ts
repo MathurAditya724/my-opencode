@@ -5,8 +5,8 @@
 
 export type Metrics = {
   inc(name: string, tags?: Record<string, string>): void
-  gauge(name: string, value: number, tags?: Record<string, string>): void
-  timing(name: string, durationMs: number, tags?: Record<string, string>): void
+  gauge(name: string, value: number): void
+  timing(name: string, durationMs: number): void
   snapshot(): MetricsSnapshot
 }
 
