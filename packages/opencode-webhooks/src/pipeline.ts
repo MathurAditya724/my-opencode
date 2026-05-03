@@ -178,7 +178,6 @@ export function makePipeline(opts: {
           entry.sessionId = sessionId
 
           persistEntity(entityKey, sessionId, trigger.agent)
-          store.completeDispatch(dispatchId, "completed")
 
           Sentry.logger.info("dispatch.started", {
             trigger_name: trigger.name,
@@ -211,6 +210,7 @@ export function makePipeline(opts: {
             },
           )
 
+          store.completeDispatch(dispatchId, "completed")
           Sentry.logger.info("dispatch.completed", {
             trigger_name: trigger.name,
             entity_key: entry.entityKey,
@@ -290,6 +290,42 @@ export function makePipeline(opts: {
     } catch (err) {
       const status = entry.abort.signal.aborted ? "timeout" : "failed"
       store.completeDispatch(dispatchId, status as "timeout" | "failed")
+
+      // If the session no longer exists (404 from OpenCode after
+      // restart), clean the stale DB entry and fall back to a fresh
+      // session instead of giving up.
+      if (isSessionNotFound(err)) {
+        Sentry.logger.warn("session.stale", {
+          entity_key: entry.entityKey,
+          session_id: entry.sessionId,
+        })
+        store.deleteEntity(entityKey.key)
+        clearTimeout(entry.abortTimer)
+        sessions.delete(entry.entityKey)
+        // Balance the drainCounter.start() from this resumeAndPrompt
+        // call — createAndPrompt will start its own.
+        drainCounter.end()
+
+        // Retry with a brand-new session.
+        const newAbort = new AbortController()
+        const newAbortTimer = setTimeout(() => newAbort.abort(), timeoutMs)
+        newAbortTimer.unref?.()
+        const fresh: SessionEntry = {
+          sessionId: "",
+          entityKey: entityKey.key,
+          agent: trigger.agent,
+          busy: true,
+          queue: entry.queue,
+          abort: newAbort,
+          abortTimer: newAbortTimer,
+          batchTimer: null,
+          idleTimer: null,
+        }
+        sessions.set(entityKey.key, fresh)
+        void createAndPrompt(fresh, entityKey, trigger, prompt, deliveryId, matchedEvent)
+        return
+      }
+
       handleError(entry, err, deliveryId, matchedEvent, trigger)
       return
     } finally {
@@ -629,4 +665,12 @@ function formatBatchPrompt(events: QueuedEvent[]): string {
 function formatError(err: unknown): string {
   if (err instanceof Error) return err.stack ?? `${err.name}: ${err.message}`
   return String(err)
+}
+
+function isSessionNotFound(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const e = err as Record<string, unknown>
+  if (e.status === 404 || e.statusCode === 404) return true
+  if (typeof e.message === "string" && /not found/i.test(e.message)) return true
+  return false
 }
