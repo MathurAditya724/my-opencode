@@ -2,8 +2,7 @@
 # Pre-release version bump for the openhealer package.
 #
 # Craft's built-in auto-bumping runs `npm version` which can fail on
-# workspace/file: deps. We bypass npm entirely by editing package.json
-# with jq directly.
+# file: deps. We bypass npm entirely by editing package.json with jq.
 #
 # Craft passes the new version via CRAFT_NEW_VERSION.
 set -euo pipefail
@@ -22,23 +21,5 @@ jq --arg v "$NEW_VERSION" '.version = $v' "$PKG" > "$tmp"
 mv "$tmp" "$PKG"
 name=$(jq -r '.name' "$PKG")
 echo "  ✓ ${name} → ${NEW_VERSION}"
-
-# Patch bun.lock if present — bun pm pack reads the version from the
-# lockfile, not from package.json. Without this, published tarballs
-# would embed the old version in their metadata.
-if [ -f bun.lock ]; then
-  echo "Patching bun.lock..."
-  tmp="$(mktemp)"
-  awk -v new_ver="$NEW_VERSION" '
-    /^    "packages\/openhealer": \{$/ { in_ws = 1 }
-    in_ws && /^      "version": "[0-9]+\.[0-9]+\.[0-9]+",$/ {
-      sub(/"[0-9]+\.[0-9]+\.[0-9]+"/, "\"" new_ver "\"")
-      in_ws = 0
-    }
-    { print }
-  ' bun.lock > "$tmp"
-  mv "$tmp" bun.lock
-  echo "  ✓ bun.lock patched"
-fi
 
 echo "Version bump complete."

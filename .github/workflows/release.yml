@@ -28,7 +28,7 @@ jobs:
       - name: Pack openhealer
         run: |
           cd packages/openhealer
-          bun install --frozen-lockfile
+          bun install
           bun pm pack --destination ../../
 
       - uses: getsentry/craft@v2
