@@ -131,6 +131,7 @@ with conclusion `success` for your own draft PR.
 - Don't touch CI config, secrets, or lockfiles unless specifically asked
 - A draft PR is fine — only BLOCKED for genuine impossibility
 - No human is watching — `question` tool is denied
+- Work in worktrees, not the main clone — `repo-setup` handles this
 
 ## Output
 

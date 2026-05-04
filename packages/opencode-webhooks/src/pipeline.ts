@@ -17,6 +17,8 @@
 
 import type { PluginInput } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import type { EntityKey } from "./entity"
 import type { DrainCounter, Semaphore } from "./semaphore"
 import type { LifecycleStore } from "./storage"
@@ -58,6 +60,12 @@ export type Pipeline = {
 }
 
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000
+
+// Derive a per-repo session directory from an entity key's repo field.
+// e.g. "MathurAditya724/my-opencode" → ~/dev/MathurAditya724/my-opencode
+function repoCwd(repo: string): string {
+  return join(homedir(), "dev", ...repo.split("/"))
+}
 
 export function makePipeline(opts: {
   client: PluginInput["client"]
@@ -126,6 +134,16 @@ export function makePipeline(opts: {
     }
   }
 
+  // Resolve the session working directory. Priority:
+  //   1. trigger.cwd (explicit per-trigger override)
+  //   2. Per-repo directory derived from entity key (~/dev/<owner>/<repo>)
+  //   3. defaultCwd (from config or ctx.directory)
+  function sessionCwd(trigger: NormalizedTrigger, entityKey: EntityKey | null): string {
+    if (trigger.cwd) return trigger.cwd
+    if (entityKey?.repo) return repoCwd(entityKey.repo)
+    return defaultCwd
+  }
+
   async function createAndPrompt(
     entry: SessionEntry,
     entityKey: EntityKey,
@@ -161,9 +179,10 @@ export function makePipeline(opts: {
           },
         },
         async () => {
+          const cwd = sessionCwd(trigger, entityKey)
           const session = await client.session.create({
             body: { title: `[webhook/${trigger.name}] ${entry.entityKey}` },
-            query: { directory: trigger.cwd ?? defaultCwd },
+            query: { directory: cwd },
             signal: entry.abort.signal,
           })
           const sessionId = session.data?.id

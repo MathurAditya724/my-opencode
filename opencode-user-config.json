@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "snapshot": false,
   "plugin": [
     "file:///home/developer/.config/opencode/node_modules/@loreai/opencode",
     "file:///home/developer/.config/opencode/node_modules/opencode-webhooks"
