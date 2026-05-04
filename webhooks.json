@@ -7,8 +7,8 @@
       "event": [
         "issues",
         "pull_request",
-        "check_suite",
-        "workflow_run",
+        "check_suite:completed",
+        "workflow_run:completed",
         "push"
       ],
       "agent": "github-agent",

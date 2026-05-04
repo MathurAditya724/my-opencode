@@ -9,8 +9,23 @@ import type { Pipeline } from "./pipeline"
 import { renderTemplate } from "./template"
 import type { NormalizedTrigger, SkippedDispatch } from "./types"
 
-function eventMatches(pattern: string, event: string): boolean {
+// Match an event pattern against an incoming event + action.
+// Supported pattern forms:
+//   "issues"                — matches event "issues" with any action
+//   "workflow_run:completed" — matches event "workflow_run" only when action is "completed"
+//   "email.*"               — prefix wildcard (matches "email.received", etc.)
+//   "*"                     — matches everything
+function eventMatches(pattern: string, event: string, action: string | null): boolean {
   if (pattern === "*") return true
+
+  // "event:action" — per-event action filter
+  const colon = pattern.indexOf(":")
+  if (colon !== -1) {
+    const evPart = pattern.slice(0, colon)
+    const actPart = pattern.slice(colon + 1)
+    return evPart === event && actPart === action
+  }
+
   if (pattern === event) return true
   if (pattern.endsWith(".*")) {
     const prefix = pattern.slice(0, -1)
@@ -26,7 +41,7 @@ export function findMatching(
 ): NormalizedTrigger[] {
   return triggers.filter((t) => {
     if (t.enabled === false) return false
-    const eventOk = t.events.some((e) => eventMatches(e, event))
+    const eventOk = t.events.some((e) => eventMatches(e, event, action))
     if (!eventOk) return false
     return t.action === null || t.action === action
   })
