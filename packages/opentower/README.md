@@ -1,4 +1,4 @@
-# 🏮 lantern
+# 🏮 opentower
 
 OpenCode plugin: receive GitHub webhooks (or Cloudflare-forwarded GitHub notification emails) and dispatch them to OpenCode agent sessions running in the same process.
 
@@ -20,17 +20,17 @@ Once published to npm, add the package name to your OpenCode config's `plugin` a
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "lantern"
+    "opentower"
   ]
 }
 ```
 
-> Until the package is published to npm, install it manually: add `"lantern": "file:/path/to/this/repo/packages/lantern"` to a `package.json` in your OpenCode config directory (`~/.config/opencode/package.json`), run `bun install` there, and reference the resolved path:
+> Until the package is published to npm, install it manually: add `"opentower": "file:/path/to/this/repo/packages/opentower"` to a `package.json` in your OpenCode config directory (`~/.config/opencode/package.json`), run `bun install` there, and reference the resolved path:
 >
 > ```jsonc
 > {
 >   "plugin": [
->     "file:///home/<user>/.config/opencode/node_modules/lantern"
+>     "file:///home/<user>/.config/opencode/node_modules/opentower"
 >   ]
 > }
 > ```
@@ -68,7 +68,7 @@ Minimal config:
 | `timeout_ms` | `1800000` (30 min) | Per-session abort budget. |
 | `max_concurrent` | `2` | Concurrency cap across all triggers. |
 | `default_cwd` | OpenCode project root | Fallback session cwd when a trigger doesn't override. |
-| `db_path` | `${XDG_DATA_HOME or ~/.local/share}/lantern/deliveries.sqlite` | SQLite path for delivery dedup. |
+| `db_path` | `${XDG_DATA_HOME or ~/.local/share}/opentower/deliveries.sqlite` | SQLite path for delivery dedup. |
 | `retention` | `1000` | Max deliveries kept in dedup DB; oldest pruned. |
 | `batch_window_ms` | `5000` | How long to wait for additional events before flushing the pipeline queue as a batched follow-up prompt. Allows coalescing rapid-fire events (e.g. CI failure + review comment) into a single prompt. |
 | `triggers` | `[]` | Array of trigger objects (see below). |
@@ -112,7 +112,7 @@ If `gh` isn't installed or `GH_TOKEN` isn't set, the `$BOT_LOGIN` placeholder is
 ## Health check
 
 ```
-GET /healthz → 200 { ok: true, plugin: "lantern" }
+GET /healthz → 200 { ok: true, plugin: "opentower" }
 ```
 
 ## Webhook endpoints

@@ -9,7 +9,7 @@ Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to d
 - **OpenCode** built from source from the [`BYK/opencode`](https://github.com/BYK/opencode/tree/byk/cumulative) fork (`byk/cumulative` branch) — carries question-dock UX, plan-mode, and db perf fixes that aren't yet in upstream. Built fresh into the image; auto-update is effectively disabled because the fork has no release feed.
 - [Sentry CLI](https://cli.sentry.dev), GitHub CLI, **nvm + Node 22 LTS** (`pnpm` / `yarn` via corepack), **Bun**, plus `git`, `ripgrep`, `fd`, `fzf`, `jq`, `yq`, and `build-essential`.
 - No MCP servers preconfigured — add your own via a project-local `opencode.json` or by editing [`opencode-user-config.json`](./opencode-user-config.json) before building.
-- **Bundled OpenCode plugin: [`lantern`](./packages/lantern)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (3 triggers covering all GitHub events and email notifications). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/lantern/`](./packages/lantern) — see its [README](./packages/lantern/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
+- **Bundled OpenCode plugin: [`opentower`](./packages/opentower)** — turns inbound GitHub webhook deliveries into OpenCode agent sessions running in the same `opencode` process. Ships with [`webhooks.json`](./webhooks.json) baked in (3 triggers covering all GitHub events and email notifications). Activates on container start once you set `GITHUB_WEBHOOK_SECRET`. The plugin lives as a standalone, publishable npm package under [`packages/opentower/`](./packages/opentower) — see its [README](./packages/opentower/README.md) for the full config schema and how to use it in your own OpenCode setup. See also [GitHub webhooks → agent sessions](#github-webhooks--agent-sessions) below for this image's specific wiring.
 - **Bundled agent** (permissions pre-broadened so it doesn't stall on approval prompts):
   - [`github-agent`](./agents/github-agent.md) — unified agent that receives raw webhook payloads, triages the event, and loads situation-specific skills to drive it to completion. Handles the full lifecycle: issue assignment → draft PR → review → CI fix → comment response.
 - **Bundled skills** (loadable on demand by the agent via the `skill` tool):
@@ -56,14 +56,14 @@ See [`.env.example`](./.env.example) for the full template.
 |---|---|
 | One of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | **Required.** LLM provider key. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_URL` | For the bundled `sentry` CLI. |
-| `GH_TOKEN` | For the bundled `gh` CLI and the `lantern` plugin's bot identity resolution. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin resolves the bot's login at boot for self-loop prevention (`$BOT_LOGIN` substitution); without `GH_TOKEN`, self-loop prevention is degraded. |
-| `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `lantern` plugin. Required to receive webhooks. |
+| `GH_TOKEN` | For the bundled `gh` CLI and the `opentower` plugin's bot identity resolution. PAT with the scopes you need (typical: `repo`, `read:org`, `workflow`). The plugin resolves the bot's login at boot for self-loop prevention (`$BOT_LOGIN` substitution); without `GH_TOKEN`, self-loop prevention is degraded. |
+| `GITHUB_WEBHOOK_SECRET` | HMAC secret for the `opentower` plugin. Required to receive webhooks. |
 | `WEBHOOK_PORT`, `WEBHOOKS_CONFIG` | Optional plugin tuning. See [`.env.example`](./.env.example). |
 | `PORT` | Set automatically by most PaaS providers. Defaults to `4096`. |
 
 ## GitHub webhooks → agent sessions
 
-The bundled [`lantern`](./packages/lantern) plugin
+The bundled [`opentower`](./packages/opentower) plugin
 runs **inside** the OpenCode server process — no sidecar, no second
 process to supervise, no loopback HTTP. It opens its own listener on
 port `5050` (configurable via `WEBHOOK_PORT`) and dispatches verified
@@ -211,7 +211,7 @@ afterward — view it in OpenCode's UI like any other session.
 ### Health check
 
 `GET http://<host>:5050/healthz` (the plugin's port, not OpenCode's
-4096) returns `{ "ok": true, "plugin": "lantern" }` once the
+4096) returns `{ "ok": true, "plugin": "opentower" }` once the
 listener is up. No auth required.
 
 ## Local test

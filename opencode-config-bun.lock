@@ -7,7 +7,7 @@
       "dependencies": {
         "@loreai/opencode": "latest",
         "@opencode-ai/plugin": "^1.14.30",
-        "lantern": "file:./packages/lantern",
+        "opentower": "file:./packages/opentower",
       },
     },
   },
@@ -258,7 +258,7 @@
 
     "node-gyp-build-optional-packages": ["node-gyp-build-optional-packages@5.2.2", "", { "dependencies": { "detect-libc": "^2.0.1" }, "bin": { "node-gyp-build-optional-packages": "bin.js", "node-gyp-build-optional-packages-optional": "optional.js", "node-gyp-build-optional-packages-test": "build-test.js" } }, "sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw=="],
 
-    "lantern": ["lantern@file:packages/lantern", { "dependencies": { "@sentry/bun": "^9.0.0", "hono": "^4.0.0" }, "devDependencies": { "@opencode-ai/plugin": "^1.14.30", "@types/bun": "latest", "typescript": "^5.6.0" }, "peerDependencies": { "@opencode-ai/plugin": ">=1.1.1" } }],
+    "opentower": ["opentower@file:packages/opentower", { "dependencies": { "@sentry/bun": "^9.0.0", "hono": "^4.0.0" }, "devDependencies": { "@opencode-ai/plugin": "^1.14.30", "@types/bun": "latest", "typescript": "^5.6.0" }, "peerDependencies": { "@opencode-ai/plugin": ">=1.1.1" } }],
 
     "path-key": ["path-key@3.1.1", "", {}, "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q=="],
 

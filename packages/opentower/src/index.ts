@@ -1,4 +1,4 @@
-// lantern: receives GitHub webhooks (and optional Cloudflare
+// opentower: receives GitHub webhooks (and optional Cloudflare
 // email worker forwards) and dispatches to OpenCode agents via the
 // in-process SDK client. Uses Hono for routing, Sentry for
 // observability (traces, structured logs, error tracking).
@@ -24,11 +24,11 @@ export type {
 } from "./types"
 
 export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
-  console.log("[lantern] plugin loading...")
+  console.log("[opentower] plugin loading...")
 
   const g = globalThis as { __webhookServerStarted?: boolean }
   if (g.__webhookServerStarted) {
-    console.log("[lantern] server already running, skipping duplicate init")
+    console.log("[opentower] server already running, skipping duplicate init")
     return {}
   }
   g.__webhookServerStarted = true
@@ -36,7 +36,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   try {
     if (typeof Bun === "undefined") {
       throw new Error(
-        "lantern requires Bun (uses Bun.serve, Bun.spawn, Bun.file). Install Bun >=1.2.0: https://bun.sh",
+        "opentower requires Bun (uses Bun.serve, Bun.spawn, Bun.file). Install Bun >=1.2.0: https://bun.sh",
       )
     }
 
@@ -51,20 +51,20 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
           return Number.isFinite(rate) ? rate : 0.1
         })(),
       })
-      console.log("[lantern] Sentry initialized (logs + traces enabled)")
+      console.log("[opentower] Sentry initialized (logs + traces enabled)")
     }
 
     const guard = globalThis as { __ghWebhookGuard?: boolean }
     if (!guard.__ghWebhookGuard) {
       process.on("unhandledRejection", (err) => {
-        console.error("[lantern] unhandledRejection:", err)
+        console.error("[opentower] unhandledRejection:", err)
         Sentry.captureException(err)
       })
       guard.__ghWebhookGuard = true
     }
 
     const cfg = await readWebhookConfig()
-    console.log(`[lantern] config loaded from ${configPath()}`)
+    console.log(`[opentower] config loaded from ${configPath()}`)
 
     const port = cfg.port ?? Number(process.env.WEBHOOK_PORT ?? "5050")
     const secret = cfg.secret ?? process.env.GITHUB_WEBHOOK_SECRET ?? ""
@@ -76,11 +76,11 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
 
     const botLogin = await resolveBotLogin()
     if (botLogin) {
-      console.log(`[lantern] bot identity: ${botLogin}`)
+      console.log(`[opentower] bot identity: ${botLogin}`)
       Sentry.setTag("bot.login", botLogin)
     } else {
       console.warn(
-        `[lantern] WARNING: could not resolve bot identity via 'gh api user' -- $BOT_LOGIN in ignore_authors will not be substituted.`,
+        `[opentower] WARNING: could not resolve bot identity via 'gh api user' -- $BOT_LOGIN in ignore_authors will not be substituted.`,
       )
     }
 
@@ -90,18 +90,18 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
 
     if (triggers.length === 0) {
       console.log(
-        `[lantern] no triggers configured (looked at ${configPath()}) -- listener disabled`,
+        `[opentower] no triggers configured (looked at ${configPath()}) -- listener disabled`,
       )
       return {}
     }
     if (githubTriggerCount > 0 && !secret) {
       console.warn(
-        `[lantern] WARNING: no GitHub HMAC secret configured -- /webhooks/github will reject with 503`,
+        `[opentower] WARNING: no GitHub HMAC secret configured -- /webhooks/github will reject with 503`,
       )
     }
     if (emailTriggerCount > 0 && !emailSecret) {
       console.warn(
-        `[lantern] WARNING: no email HMAC secret configured -- /webhooks/email will reject with 503`,
+        `[opentower] WARNING: no email HMAC secret configured -- /webhooks/email will reject with 503`,
       )
     }
 
@@ -113,7 +113,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const dbPath = process.env.LIFECYCLE_DB_PATH
       ?? join(homedir(), "dev", ".opencode", "lifecycle.db")
     const store = openLifecycleStore(dbPath)
-    console.log(`[lantern] lifecycle store opened at ${dbPath}`)
+    console.log(`[opentower] lifecycle store opened at ${dbPath}`)
 
     const pipeline = makePipeline({
       client: ctx.client,
@@ -134,7 +134,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       botLogin,
     })
 
-    console.log(`[lantern] starting Bun.serve on port ${port}...`)
+    console.log(`[opentower] starting Bun.serve on port ${port}...`)
     const server = Bun.serve({
       port,
       hostname: "0.0.0.0",
@@ -142,7 +142,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     })
 
     console.log(
-      `[lantern] listening on http://0.0.0.0:${server.port} (triggers: github=${githubTriggerCount}, email=${emailTriggerCount})`,
+      `[opentower] listening on http://0.0.0.0:${server.port} (triggers: github=${githubTriggerCount}, email=${emailTriggerCount})`,
     )
 
     let stopping = false
@@ -150,7 +150,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       if (stopping) return
       stopping = true
       console.log(
-        `[lantern] received ${sig}, closing listener (in-flight: ${drainCounter.inFlight()})`,
+        `[opentower] received ${sig}, closing listener (in-flight: ${drainCounter.inFlight()})`,
       )
       server.stop(true)
       const drainTimeoutMs = 25_000
@@ -161,10 +161,10 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
             setTimeout(() => reject(new Error("drain timeout")), drainTimeoutMs),
           ),
         ])
-        console.log(`[lantern] all dispatches drained`)
+        console.log(`[opentower] all dispatches drained`)
       } catch {
         console.warn(
-          `[lantern] drain timeout after ${drainTimeoutMs}ms -- ${drainCounter.inFlight()} dispatch(es) still in flight`,
+          `[opentower] drain timeout after ${drainTimeoutMs}ms -- ${drainCounter.inFlight()} dispatch(es) still in flight`,
         )
       }
       store.close()
@@ -176,7 +176,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     return {}
   } catch (err) {
     g.__webhookServerStarted = false
-    console.error("[lantern] FATAL: plugin failed to start:", err)
+    console.error("[opentower] FATAL: plugin failed to start:", err)
     throw err
   }
 }

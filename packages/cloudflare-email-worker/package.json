@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cloudflare Email Worker that forwards GitHub notification emails to the lantern plugin's /webhooks/email endpoint.",
+  "description": "Cloudflare Email Worker that forwards GitHub notification emails to the opentower plugin's /webhooks/email endpoint.",
   "scripts": {
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",

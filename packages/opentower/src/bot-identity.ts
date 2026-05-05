@@ -18,14 +18,14 @@ export async function resolveBotLogin(): Promise<string | null> {
     clearTimeout(timer)
     if (exitCode !== 0) {
       console.warn(
-        `[lantern] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`,
+        `[opentower] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`,
       )
       return null
     }
     const login = stdout.trim()
     return login.length > 0 ? login : null
   } catch (err) {
-    console.warn("[lantern] resolveBotLogin failed:", err)
+    console.warn("[opentower] resolveBotLogin failed:", err)
     return null
   }
 }

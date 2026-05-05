@@ -1,6 +1,6 @@
 # opencode-cloudflare-email-worker
 
-Cloudflare Email Worker that sits in front of the [`lantern`](../lantern/) plugin. It does two things per inbound email:
+Cloudflare Email Worker that sits in front of the [`opentower`](../opentower/) plugin. It does two things per inbound email:
 
 1. **Always forwards** the email verbatim to `FORWARD_TO` (your real inbox), if the env var is set. DKIM is preserved via Cloudflare's `message.forward()`.
 2. **If the sender is in `ALLOWED_SENDERS`**, it builds a small JSON event from the headers (`from`, `to`, `subject`, `message_id`, `in_reply_to`, `references`, `list_id`, `x_github_reason`, `x_github_sender`), HMAC-signs it, and POSTs it to `WEBHOOK_URL` (the plugin's `/webhooks/email` endpoint).
@@ -30,7 +30,7 @@ GitHub  ──email──▶  gh@yourdomain.com
                             │
                             ▼
                   https://your-host/webhooks/email
-                       lantern plugin
+                       opentower plugin
                        (verify → identify → gh fetch → dispatch)
 ```
 
@@ -46,7 +46,7 @@ GitHub  ──email──▶  gh@yourdomain.com
 
    | Var | Purpose |
    |---|---|
-   | `WEBHOOK_URL` | Public URL of the lantern plugin's email endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network. |
+   | `WEBHOOK_URL` | Public URL of the opentower plugin's email endpoint, e.g. `https://your-opencode.example.com:5050/webhooks/email`. Must be reachable from the Cloudflare worker network. |
    | `FORWARD_TO` | _(optional)_ Destination address for the verbatim forward (e.g. `you@yourdomain.com`). **Must be verified in Cloudflare Email Routing first** (Email Routing → Destination addresses → Add). Unset = no forwarding, webhook still fires. |
 
    **For local dev (`wrangler dev`)**: copy `.env.example` to `.env` and edit. Wrangler v4 reads `.env` automatically and exposes the keys as worker bindings.
@@ -104,7 +104,7 @@ GitHub  ──email──▶  gh@yourdomain.com
 
 - Send yourself a mention/review request from another GitHub account.
 - Watch the worker: `bun run tail`. Should log a successful webhook POST and (if `FORWARD_TO` is set) a successful forward.
-- Watch the container's stdout. Should log `[lantern] trigger 'email-mention' → session ...`.
+- Watch the container's stdout. Should log `[opentower] trigger 'email-mention' → session ...`.
 - Check your `FORWARD_TO` inbox — the original email should have arrived with DKIM intact.
 
 ## Failure modes
@@ -136,7 +136,7 @@ Cloudflare Email Routing is free for personal use. Email Workers count against y
 
 - Email is a notification stream, not an event stream. You only get what GitHub sends to your inbox: mentions, review requests, assignments, comments on things you're involved in. No `push`, no `check_suite`, no `release`. Use a real webhook (or GitHub App) for those.
 - ~10–30s end-to-end latency vs. ~1s for direct webhooks.
-- One Cloudflare worker per lantern endpoint. Multi-tenant fan-out isn't supported (yet).
+- One Cloudflare worker per opentower endpoint. Multi-tenant fan-out isn't supported (yet).
 
 ## License
 

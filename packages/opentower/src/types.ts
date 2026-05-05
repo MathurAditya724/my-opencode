@@ -1,4 +1,4 @@
-// Shared types for the lantern plugin.
+// Shared types for the opentower plugin.
 
 export type TriggerSource = "github_webhook" | "email"
 

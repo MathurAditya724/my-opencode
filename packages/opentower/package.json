@@ -1,5 +1,5 @@
 {
-  "name": "lantern",
+  "name": "opentower",
   "version": "0.0.0",
   "type": "module",
   "license": "MIT",
@@ -15,7 +15,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "echo 'lantern ships raw TS — no build step needed'"
+    "build": "echo 'opentower ships raw TS — no build step needed'"
   },
   "dependencies": {
     "hono": "^4.0.0",
@@ -40,7 +40,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/MathurAditya724/my-opencode.git",
-    "directory": "packages/lantern"
+    "directory": "packages/opentower"
   },
   "publishConfig": {
     "access": "public"

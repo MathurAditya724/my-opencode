@@ -3,6 +3,6 @@
   "snapshot": false,
   "plugin": [
     "file:///home/developer/.config/opencode/node_modules/@loreai/opencode",
-    "file:///home/developer/.config/opencode/node_modules/lantern"
+    "file:///home/developer/.config/opencode/node_modules/opentower"
   ]
 }

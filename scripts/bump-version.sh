@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-release version bump for the lantern package.
+# Pre-release version bump for the opentower package.
 #
 # Craft's built-in auto-bumping runs `npm version` which can fail on
 # file: deps. We bypass npm entirely by editing package.json with jq.
@@ -13,9 +13,9 @@ if [ -z "$NEW_VERSION" ]; then
   exit 1
 fi
 
-echo "Bumping lantern to ${NEW_VERSION}"
+echo "Bumping opentower to ${NEW_VERSION}"
 
-PKG="packages/lantern/package.json"
+PKG="packages/opentower/package.json"
 tmp="$(mktemp)"
 jq --arg v "$NEW_VERSION" '.version = $v' "$PKG" > "$tmp"
 mv "$tmp" "$PKG"

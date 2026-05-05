@@ -38,12 +38,12 @@ export function createApp(opts: {
 
   app.onError((err, c) => {
     Sentry.captureException(err)
-    console.error("[lantern] unhandled route error:", err)
+    console.error("[opentower] unhandled route error:", err)
     return c.json({ error: "internal server error" }, 500)
   })
 
   app.get("/healthz", (c) => {
-    return c.json({ ok: true, plugin: "lantern" })
+    return c.json({ ok: true, plugin: "opentower" })
   })
 
   // Sentry middleware: isolate each request into its own scope.

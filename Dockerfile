@@ -192,7 +192,7 @@ COPY --chown=developer:developer agents \
 COPY --chown=developer:developer skills \
      /home/developer/.config/opencode/skills
 
-# Bundled plugin packages. The `lantern` plugin lives under
+# Bundled plugin packages. The `opentower` plugin lives under
 # packages/ as a workspace-style file: dep referenced from
 # opencode-config-package.json. `bun install` resolves it into
 # node_modules/ alongside the npm-published @loreai/opencode plugin;
@@ -214,7 +214,7 @@ RUN cd /home/developer/.config/opencode \
  && bun install --frozen-lockfile --production \
  && rm -rf ~/.bun/install/cache
 
-# Default config for the lantern plugin: 3 broad triggers
+# Default config for the opentower plugin: 3 broad triggers
 # routing all GitHub events and email notifications to the unified
 # github-agent. The plugin reads this on startup; without it, the
 # listener stays off (no surprise port). Override per-deploy by setting
@@ -239,7 +239,7 @@ EXPOSE 4096 5050
 WORKDIR /home/developer/dev
 
 # PORT lets PaaS platforms (Railway/Fly/Render) assign a port; falls back
-# to 4096 locally. WEBHOOK_PORT (default 5050) is what the lantern
+# to 4096 locally. WEBHOOK_PORT (default 5050) is what the opentower
 # plugin binds its listener to.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec opencode web --hostname 0.0.0.0 --port ${PORT:-4096}"]

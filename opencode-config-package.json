@@ -7,6 +7,6 @@
   "dependencies": {
     "@opencode-ai/plugin": "^1.14.30",
     "@loreai/opencode": "latest",
-    "lantern": "file:./packages/lantern"
+    "opentower": "file:./packages/opentower"
   }
 }
