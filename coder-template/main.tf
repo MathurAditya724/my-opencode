@@ -31,6 +31,7 @@ data "coder_parameter" "gh_token" {
   type         = "string"
   mutable      = true
   ephemeral    = true
+  default      = ""
 }
 
 data "coder_parameter" "anthropic_api_key" {
@@ -84,23 +85,15 @@ resource "docker_volume" "dev" {
 # --- Agent ---
 
 resource "coder_agent" "main" {
-  arch           = data.coder_provisioner.me.arch
-  os             = "linux"
-  dir            = "/home/developer/dev"
-  startup_script = <<-EOT
-    echo "Workspace ready."
-  EOT
+  arch = data.coder_provisioner.me.arch
+  os   = "linux"
+  dir  = "/home/developer/dev"
 
   env = {
-    GH_TOKEN               = data.coder_parameter.gh_token.value
-    ANTHROPIC_API_KEY       = data.coder_parameter.anthropic_api_key.value
-    OPENAI_API_KEY          = data.coder_parameter.openai_api_key.value
-    GITHUB_WEBHOOK_SECRET   = data.coder_parameter.github_webhook_secret.value
-    WEBHOOK_PORT            = tostring(data.coder_parameter.webhook_port.value)
-    GIT_AUTHOR_NAME         = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
-    GIT_AUTHOR_EMAIL        = data.coder_workspace_owner.me.email
-    GIT_COMMITTER_NAME      = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
-    GIT_COMMITTER_EMAIL     = data.coder_workspace_owner.me.email
+    GIT_AUTHOR_NAME    = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
+    GIT_AUTHOR_EMAIL   = data.coder_workspace_owner.me.email
+    GIT_COMMITTER_NAME = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
+    GIT_COMMITTER_EMAIL = data.coder_workspace_owner.me.email
   }
 
   metadata {
@@ -158,11 +151,18 @@ resource "docker_container" "workspace" {
   hostname = data.coder_workspace.me.name
   dns      = ["1.1.1.1", "8.8.8.8"]
 
-  entrypoint = [
-    "/usr/bin/tini", "--",
-    "/usr/local/bin/docker-entrypoint.sh",
+  # Use the image's baked-in entrypoint (tini + docker-entrypoint.sh).
+  # The CMD starts the coder agent in the background, then execs into
+  # the opencode web server. The agent init_script is written to a file
+  # to avoid shell interpolation issues with Terraform string expansion.
+  command = [
     "sh", "-c",
-    "${coder_agent.main.init_script} & exec opencode web --hostname 0.0.0.0 --port 4096",
+    <<-EOT
+      echo '${base64encode(coder_agent.main.init_script)}' | base64 -d > /tmp/coder-init.sh
+      chmod +x /tmp/coder-init.sh
+      /tmp/coder-init.sh &
+      exec opencode web --hostname 0.0.0.0 --port 4096
+    EOT
   ]
 
   env = [
