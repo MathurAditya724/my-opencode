@@ -1,10 +1,13 @@
 terraform {
+  required_version = ">= 1.0"
   required_providers {
     coder = {
-      source = "coder/coder"
+      source  = "coder/coder"
+      version = "~> 2.0"
     }
     docker = {
-      source = "kreuzwerker/docker"
+      source  = "kreuzwerker/docker"
+      version = "~> 3.0"
     }
   }
 }
@@ -90,10 +93,14 @@ resource "coder_agent" "main" {
   dir  = "/home/developer/dev"
 
   env = {
-    GIT_AUTHOR_NAME    = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
-    GIT_AUTHOR_EMAIL   = data.coder_workspace_owner.me.email
-    GIT_COMMITTER_NAME = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
-    GIT_COMMITTER_EMAIL = data.coder_workspace_owner.me.email
+    GH_TOKEN              = data.coder_parameter.gh_token.value
+    ANTHROPIC_API_KEY     = data.coder_parameter.anthropic_api_key.value
+    OPENAI_API_KEY        = data.coder_parameter.openai_api_key.value
+    GITHUB_WEBHOOK_SECRET = data.coder_parameter.github_webhook_secret.value
+    WEBHOOK_PORT          = tostring(data.coder_parameter.webhook_port.value)
+    # git identity is set by docker-entrypoint.sh from GH_TOKEN/gh api user;
+    # do not set GIT_AUTHOR_* here — it would attribute bot commits to the
+    # Coder workspace owner instead of the GitHub bot account.
   }
 
   metadata {
@@ -121,7 +128,7 @@ resource "coder_agent" "main" {
   }
 }
 
-# OpenCode web UI
+# OpenCode web UI — exposed via Coder's reverse proxy
 resource "coder_app" "opencode" {
   agent_id     = coder_agent.main.id
   slug         = "opencode"
@@ -151,22 +158,20 @@ resource "docker_container" "workspace" {
   hostname = data.coder_workspace.me.name
   dns      = ["1.1.1.1", "8.8.8.8"]
 
-  # Use the image's baked-in entrypoint (tini + docker-entrypoint.sh).
-  # The CMD starts the coder agent in the background, then execs into
-  # the opencode web server. The agent init_script is written to a file
-  # to avoid shell interpolation issues with Terraform string expansion.
+  # The image ENTRYPOINT is [tini -- docker-entrypoint.sh]. docker-entrypoint.sh
+  # ends with `exec "$@"`, so it sets up git/gh identity then execs whatever
+  # CMD we pass. We pass the Coder init_script (which registers the agent and
+  # runs startup_script) followed by `opencode web` as the long-lived process.
+  # Using `command` (Docker CMD) keeps tini+entrypoint intact for signal
+  # forwarding and proper PID1 behaviour.
   command = [
     "sh", "-c",
-    <<-EOT
-      echo '${base64encode(coder_agent.main.init_script)}' | base64 -d > /tmp/coder-init.sh
-      chmod +x /tmp/coder-init.sh
-      /tmp/coder-init.sh &
-      exec opencode web --hostname 0.0.0.0 --port 4096
-    EOT
+    "sh -c \"$CODER_AGENT_INIT_SCRIPT\" & exec opencode web --hostname 0.0.0.0 --port 4096",
   ]
 
   env = [
     "CODER_AGENT_TOKEN=${coder_agent.main.token}",
+    "CODER_AGENT_INIT_SCRIPT=${coder_agent.main.init_script}",
     "GH_TOKEN=${data.coder_parameter.gh_token.value}",
     "ANTHROPIC_API_KEY=${data.coder_parameter.anthropic_api_key.value}",
     "OPENAI_API_KEY=${data.coder_parameter.openai_api_key.value}",
@@ -182,12 +187,12 @@ resource "docker_container" "workspace" {
     read_only      = false
   }
 
-  # Docker socket — enables docker-compose inside the workspace.
+  # Docker socket — enables docker compose inside the workspace.
   volumes {
     host_path      = "/var/run/docker.sock"
     container_path = "/var/run/docker.sock"
   }
 
-  user   = "1000:1000"
+  # 4 GiB RAM limit. Adjust based on your Docker host capacity.
   memory = 4096
 }
