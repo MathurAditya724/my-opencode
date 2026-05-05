@@ -51,8 +51,10 @@ jobs:
     steps:
       - name: Validate version input
         id: version
+        env:
+          RAW_VERSION: ${{ inputs.version }}
         run: |
-          raw="${{ inputs.version }}"
+          raw="$RAW_VERSION"
           # Strip optional leading `v` for the image tag; re-add for the git tag.
           stripped="${raw#v}"
           # Semver-ish: MAJOR.MINOR.PATCH with optional prerelease suffix.
