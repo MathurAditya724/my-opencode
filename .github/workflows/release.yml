@@ -1,9 +1,9 @@
 # Unified release workflow: Docker image + npm package + GitHub release.
 #
 # Triggered via the Actions tab → "Run workflow". Builds and pushes the
-# Docker image tagged with the git SHA, packs the lantern npm tarball,
+# Docker image tagged with the git SHA, packs the opentower npm tarball,
 # then runs craft which:
-#   1. Publishes lantern to npm (OIDC auth)
+#   1. Publishes opentower to npm (OIDC auth)
 #   2. Re-tags the Docker image with the release version + :latest
 #   3. Creates a GitHub Release with auto-generated changelog
 name: Release
@@ -75,14 +75,14 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      # --- Pack lantern npm tarball ---
+      # --- Pack opentower npm tarball ---
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Pack lantern
+      - name: Pack opentower
         run: |
-          cd packages/lantern
+          cd packages/opentower
           bun install
           bun pm pack --destination ../../
 

@@ -12,11 +12,11 @@ artifactProvider:
     artifacts:
       CI: npm-tarball
 targets:
-  # Publish the lantern package to npm.
+  # Publish the opentower package to npm.
   - name: npm
     access: public
     oidc: true
-    includeNames: /^lantern-\d.*\.tgz$/
+    includeNames: /^opentower-\d.*\.tgz$/
   # Re-tag the Docker image (built+pushed earlier in the workflow) with
   # the release version. The source image is tagged with the git SHA;
   # craft copies it to the versioned tag and :latest.
