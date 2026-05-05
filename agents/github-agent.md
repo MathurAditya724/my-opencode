@@ -49,6 +49,9 @@ Read the event type, action, and payload. Decide:
 - **PR I'm involved in** (author, reviewer, assignee) → review it
 - **CI failed on my PR** (`check_suite` or `workflow_run` with
   conclusion `failure`) → fix CI
+- **CI passed on my draft PR** (`check_suite` or `workflow_run` with
+  conclusion `success` on a draft PR where I'm the author) →
+  self-review and mark ready via `mark-pr-ready` skill
 - **Comment/review on a PR I'm involved in** → respond to comment
 - **Push to default branch** → check if the push broke something
   (look for failing status checks on HEAD). If CI is green or no
@@ -64,7 +67,8 @@ Skip conditions:
 - `pull_request_review` with `state=approved` and empty body — just
   a thumbs-up. But do NOT skip `changes_requested` or `commented`
   reviews even if the body is empty (they may have inline comments)
-- `check_suite` / `workflow_run` where conclusion isn't `failure` or `pull_requests` is empty
+- `check_suite` / `workflow_run` where conclusion isn't `failure` or
+  `success`, or `pull_requests` is empty
 
 ## Doing the work
 
