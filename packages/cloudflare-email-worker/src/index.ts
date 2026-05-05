@@ -128,7 +128,7 @@ export default {
     // Bearer auth for all /senders routes.
     const authHeader = request.headers.get("authorization") ?? ""
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-    if (token !== env.EMAIL_WEBHOOK_SECRET) {
+    if (!token || !env.EMAIL_WEBHOOK_SECRET || token !== env.EMAIL_WEBHOOK_SECRET) {
       return Response.json({ error: "unauthorized" }, { status: 401 })
     }
 
@@ -213,9 +213,9 @@ async function handleListSenders(
   const countBinds: unknown[] = []
 
   if (search) {
-    query = "SELECT pattern, kind, created_at FROM allowed_senders WHERE pattern LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
-    countQuery = "SELECT COUNT(*) as total FROM allowed_senders WHERE pattern LIKE ?"
-    const like = `%${search}%`
+    query = "SELECT pattern, kind, created_at FROM allowed_senders WHERE pattern LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    countQuery = "SELECT COUNT(*) as total FROM allowed_senders WHERE pattern LIKE ? ESCAPE '\\'"
+    const like = `%${search.replace(/[%_\\]/g, "\\$&")}%`
     binds.push(like, limit, offset)
     countBinds.push(like)
   } else {
