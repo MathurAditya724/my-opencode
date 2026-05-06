@@ -267,9 +267,12 @@ resource "kubernetes_deployment_v1" "workspace" {
           # spec — no runtime shell expansion. OpenCode is started
           # separately by coder_script.opencode after the agent connects.
           #
-          # The bootstrap script references ACCESS_URL and AUTH_TYPE as
-          # shell variables (not baked-in literals). We set them as
-          # container env vars so the script resolves them at runtime.
+          # The Coder provider bakes ACCESS_URL into the init script as
+          # a literal value at plan time. When the server's access URL
+          # isn't configured, this produces empty BINARY_URL and
+          # CODER_AGENT_URL values. After writing the script to a file,
+          # we sed-patch both lines to inject the correct URL from the
+          # container env var before exec'ing.
           args = [
             "sh", "-c",
             join("\n", [
@@ -277,16 +280,14 @@ resource "kubernetes_deployment_v1" "workspace" {
               coder_agent.main.init_script,
               "CODER_INIT_EOF",
               "chmod +x /tmp/coder-init.sh",
+              "sed -i \"s|BINARY_URL=bin/|BINARY_URL=$${CODER_AGENT_URL}bin/|\" /tmp/coder-init.sh",
+              "sed -i \"s|export CODER_AGENT_URL=\\\"\\\"$|export CODER_AGENT_URL=\\\"$${CODER_AGENT_URL}\\\"|\" /tmp/coder-init.sh",
               "exec /tmp/coder-init.sh",
             ]),
           ]
           env {
-            name  = "ACCESS_URL"
+            name  = "CODER_AGENT_URL"
             value = data.coder_workspace.me.access_url
-          }
-          env {
-            name  = "AUTH_TYPE"
-            value = "token"
           }
           env {
             name  = "CODER_AGENT_TOKEN"
