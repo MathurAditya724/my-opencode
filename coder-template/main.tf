@@ -265,7 +265,7 @@ resource "kubernetes_deployment_v1" "workspace" {
           args    = ["agent"]
           env {
             name  = "CODER_AGENT_URL"
-            value = data.coder_workspace.me.access_url
+            value = "https://coder.sentry.dev"
           }
           env {
             name  = "CODER_AGENT_TOKEN"
