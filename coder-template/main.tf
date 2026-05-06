@@ -271,7 +271,7 @@ resource "kubernetes_deployment_v1" "workspace" {
           # after the agent connects.
           args = [
             "sh", "-c",
-            "exec coder agent",
+            "echo CODER_AGENT_URL=$CODER_AGENT_URL && echo CODER_AGENT_AUTH=$CODER_AGENT_AUTH && echo CODER_AGENT_TOKEN=$CODER_AGENT_TOKEN | head -c 20 && echo '...' && exec coder agent",
           ]
           env {
             name  = "CODER_AGENT_URL"
