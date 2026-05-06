@@ -183,6 +183,23 @@ resource "coder_app" "opencode" {
   }
 }
 
+# Opentower webhook listener — exposed via Coder's reverse proxy
+resource "coder_app" "opentower" {
+  agent_id     = coder_agent.main.id
+  slug         = "opentower"
+  display_name = "Opentower Webhooks"
+  url          = "http://localhost:5050"
+  icon         = "/icon/webhook.svg"
+  subdomain    = true
+  share        = "owner"
+
+  healthcheck {
+    url       = "http://localhost:5050/healthz"
+    interval  = 10
+    threshold = 6
+  }
+}
+
 # OpenCode server — started by the Coder agent after it connects.
 # Runs in the background so the script exits immediately; the agent
 # keeps the process supervised and its logs visible in the Coder UI.
