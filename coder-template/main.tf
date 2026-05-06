@@ -256,21 +256,15 @@ resource "kubernetes_deployment_v1" "workspace" {
           image             = var.docker_image
           image_pull_policy = "Always"
 
-          # Override ENTRYPOINT (docker-entrypoint.sh) to bypass it and
-          # run coder agent directly. The image already ships /usr/bin/coder
-          # (v2.33.1). CODER_AGENT_URL and CODER_AGENT_TOKEN are passed as
-          # explicit env vars below. OpenCode is started separately by
-          # coder_script.opencode after the agent connects.
+          # Override ENTRYPOINT and CMD to run coder agent with explicit
+          # CLI flags — bypassing env var injection to rule out any
+          # K8s-level stripping of CODER_AGENT_* env vars.
           command = ["/usr/bin/coder"]
-          args    = ["agent"]
-          env {
-            name  = "CODER_AGENT_URL"
-            value = "https://coder.sentry.dev"
-          }
-          env {
-            name  = "CODER_AGENT_TOKEN"
-            value = coder_agent.main.token
-          }
+          args = [
+            "agent",
+            "--agent-url", "https://coder.sentry.dev",
+            "--agent-token", coder_agent.main.token,
+          ]
           env {
             name  = "GH_TOKEN"
             value = data.coder_parameter.gh_token.value
