@@ -261,23 +261,26 @@ resource "kubernetes_deployment_v1" "workspace" {
           # (Docker CMD) so the entrypoint is preserved — tini stays as
           # PID 1 and docker-entrypoint.sh runs before our command.
           #
-          # Write the Coder agent init script to a file via printenv
-          # (avoids all shell quoting issues with heredoc or echo).
-          # Then exec it. OpenCode is started separately by the
-          # coder_script.opencode resource after the agent connects.
+          # Run the Coder agent directly. The image already contains the
+          # coder binary. We skip coder_agent.main.init_script because
+          # the Coder provider bakes an empty ACCESS_URL into it (the
+          # server's access URL isn't configured), producing
+          # CODER_AGENT_URL="" which the agent rejects. Instead, we set
+          # the env vars ourselves and exec the agent binary directly.
+          # OpenCode is started separately by coder_script.opencode
+          # after the agent connects.
           args = [
             "sh", "-c",
-            join("\n", [
-              "cat > /tmp/coder-init.sh << 'CODER_INIT_EOF'",
-              coder_agent.main.init_script,
-              "CODER_INIT_EOF",
-              "chmod +x /tmp/coder-init.sh",
-              "export ACCESS_URL=\"https://coder.sentry.dev/\"",
-              "export CODER_AGENT_AUTH=\"token\"",
-              "export CODER_AGENT_TOKEN=\"$${CODER_AGENT_TOKEN}\"",
-              "exec /tmp/coder-init.sh",
-            ]),
+            "exec coder agent",
           ]
+          env {
+            name  = "CODER_AGENT_URL"
+            value = "https://coder.sentry.dev"
+          }
+          env {
+            name  = "CODER_AGENT_AUTH"
+            value = "token"
+          }
           env {
             name  = "CODER_AGENT_TOKEN"
             value = coder_agent.main.token
