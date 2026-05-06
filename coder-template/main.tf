@@ -256,15 +256,23 @@ resource "kubernetes_deployment_v1" "workspace" {
           image             = var.docker_image
           image_pull_policy = "Always"
 
-          # Override ENTRYPOINT and CMD to run coder agent with explicit
-          # CLI flags — bypassing env var injection to rule out any
-          # K8s-level stripping of CODER_AGENT_* env vars.
-          command = ["/usr/bin/coder"]
+          # Do NOT set `command` — preserve the image's ENTRYPOINT
+          # [tini, --, docker-entrypoint.sh] which handles volume ownership,
+          # git init, and gh/git identity setup before handing off to the
+          # Coder agent init script via exec "$@".
+          #
+          # `args` overrides Docker CMD. The init script is delivered as an
+          # env var because Kubernetes JSON-serializes args (turning real
+          # newlines into literal \n), breaking heredoc syntax. `printenv`
+          # faithfully writes the newlines back out.
           args = [
-            "agent",
-            "--agent-url", "https://coder.sentry.dev",
-            "--agent-token", coder_agent.main.token,
+            "sh", "-c",
+            "printenv CODER_AGENT_INIT_SCRIPT > /tmp/coder-init.sh && chmod +x /tmp/coder-init.sh && exec /tmp/coder-init.sh",
           ]
+          env {
+            name  = "CODER_AGENT_INIT_SCRIPT"
+            value = coder_agent.main.init_script
+          }
           env {
             name  = "GH_TOKEN"
             value = data.coder_parameter.gh_token.value
