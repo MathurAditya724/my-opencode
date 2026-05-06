@@ -266,6 +266,10 @@ resource "kubernetes_deployment_v1" "workspace" {
           # startup-script). The script is a literal string in the pod
           # spec — no runtime shell expansion. OpenCode is started
           # separately by coder_script.opencode after the agent connects.
+          #
+          # The bootstrap script references ACCESS_URL and AUTH_TYPE as
+          # shell variables (not baked-in literals). We set them as
+          # container env vars so the script resolves them at runtime.
           args = [
             "sh", "-c",
             join("\n", [
@@ -277,8 +281,12 @@ resource "kubernetes_deployment_v1" "workspace" {
             ]),
           ]
           env {
-            name  = "CODER_AGENT_URL"
+            name  = "ACCESS_URL"
             value = data.coder_workspace.me.access_url
+          }
+          env {
+            name  = "AUTH_TYPE"
+            value = "token"
           }
           env {
             name  = "CODER_AGENT_TOKEN"
