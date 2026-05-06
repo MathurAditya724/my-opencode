@@ -70,7 +70,7 @@ data "coder_parameter" "github_webhook_secret" {
 data "coder_parameter" "webhook_port" {
   name         = "webhook_port"
   display_name = "Webhook Port"
-  description  = "Port for the openhealer webhook listener."
+  description  = "Port for the opentower webhook listener."
   type         = "number"
   mutable      = true
   default      = "5050"
