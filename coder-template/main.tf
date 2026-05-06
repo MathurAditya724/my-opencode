@@ -256,21 +256,13 @@ resource "kubernetes_deployment_v1" "workspace" {
           image             = var.docker_image
           image_pull_policy = "Always"
 
-          # Override ENTRYPOINT and CMD to run coder agent directly using
-          # the binary already in the image (/usr/bin/coder v2.33.1).
-          # Use the internal K8s service URL (http://coder.coder-prod) to
-          # avoid hairpin NAT issues when accessing coder.sentry.dev from
-          # within the same cluster. CODER_AGENT_TOKEN passed as env var.
-          command = ["/usr/bin/coder"]
-          args    = ["agent"]
-          env {
-            name  = "CODER_AGENT_URL"
-            value = "http://coder.coder-prod.svc.cluster.local"
-          }
-          env {
-            name  = "CODER_AGENT_TOKEN"
-            value = coder_agent.main.token
-          }
+          # Debug: test network connectivity from pod to Coder server.
+          # Check both external URL and internal service URL.
+          command = ["/bin/sh"]
+          args = [
+            "-c",
+            "echo 'Testing network...' >&2; curl -sv --max-time 5 https://coder.sentry.dev/healthz >&2 2>&1; echo 'Internal:' >&2; curl -sv --max-time 5 http://coder.coder-prod.svc.cluster.local/healthz >&2 2>&1; echo 'Done' >&2; sleep 3600",
+          ]
           env {
             name  = "GH_TOKEN"
             value = data.coder_parameter.gh_token.value
