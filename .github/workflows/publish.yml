@@ -81,7 +81,12 @@ jobs:
       - name: Publish
         run: craft publish "${{ steps.inputs.outputs.version }}" --no-input --no-status-check
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # GITHUB_TOKEN is the workflow token (packages:write for ghcr.io Docker retag).
+          # GITHUB_API_TOKEN is the App token (contents:write for GitHub Release + branch merge).
+          # Craft uses GITHUB_API_TOKEN for API calls when set, and falls back to
+          # GITHUB_TOKEN for ghcr.io Docker auth.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_API_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Close issue on success
         if: success()
