@@ -1,14 +1,13 @@
 // Cloudflare Email Worker: dumb pipe in front of opentower.
 //
 // Pipeline per inbound email:
-//   1. If sender is not FORWARD_TO and not in ALLOWED_EMAILS:
-//      message.forward(FORWARD_TO). Skipped when the sender IS one of
-//      those addresses to prevent a loop / re-send.
+//   1. If sender is not FORWARD_TO:
+//      message.forward(FORWARD_TO). Skipped when the sender IS the
+//      FORWARD_TO address to prevent a loop.
 //   2. If message.from matches a pattern in the D1 allowed_senders
-//      table, matches FORWARD_TO, or is in ALLOWED_EMAILS: read the
-//      raw RFC822 message, extract plain-text and HTML body parts,
-//      build a JSON event with headers + body, HMAC-sign it, and POST
-//      to WEBHOOK_URL.
+//      table or matches FORWARD_TO: read the raw RFC822 message,
+//      extract plain-text and HTML body parts, build a JSON event
+//      with headers + body, HMAC-sign it, and POST to WEBHOOK_URL.
 //   3. On 5xx from the webhook, throw so Cloudflare retries the email.
 //      4xx is permanent (signature rejected, dedup hit, etc.) -- accept.
 //
@@ -30,7 +29,6 @@ export interface Env {
   EMAIL_WEBHOOK_SECRET: string
   DB: D1Database
   FORWARD_TO?: string
-  ALLOWED_EMAILS?: string
 }
 
 type Pattern =
@@ -44,12 +42,9 @@ export default {
     const forwardTo = extractAddress(env.FORWARD_TO ?? "").toLowerCase()
     const isFromForwardTo = forwardTo !== "" && senderAddr === forwardTo
 
-    const allowedEmails = parseAllowedEmails(env.ALLOWED_EMAILS)
-    const isFromAllowedEmail = allowedEmails.has(senderAddr)
-
     // 1. Forward to the operator's inbox -- unless the email came FROM
-    //    the FORWARD_TO address or one of the ALLOWED_EMAILS addresses.
-    if (env.FORWARD_TO && !isFromForwardTo && !isFromAllowedEmail) {
+    //    the FORWARD_TO address (anti-loop).
+    if (env.FORWARD_TO && !isFromForwardTo) {
       try {
         await message.forward(env.FORWARD_TO)
       } catch (err) {
@@ -60,7 +55,7 @@ export default {
     }
 
     // 2. Webhook gate: query D1 for allowlisted patterns.
-    if (!isFromForwardTo && !isFromAllowedEmail) {
+    if (!isFromForwardTo) {
       const patterns = await loadPatterns(env.DB)
       if (!matchesAnyPattern(message.from, patterns)) {
         console.log(`webhook skipped: from=${message.from} (not in allowlist)`)
@@ -460,16 +455,6 @@ function matchesAnyPattern(from: string, patterns: Pattern[]): boolean {
 function extractAddress(from: string): string {
   const m = from.match(/<([^>]+)>/)
   return (m ? m[1] : from).trim()
-}
-
-function parseAllowedEmails(raw: string | undefined): Set<string> {
-  if (!raw) return new Set()
-  return new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  )
 }
 
 async function hmacSha256Hex(
