@@ -251,11 +251,11 @@ resource "kubernetes_deployment_v1" "workspace" {
           image_pull_policy = "Always"
 
           # The image ENTRYPOINT is [tini -- docker-entrypoint.sh] which
-          # sets up git/gh identity then execs CMD. We override CMD to
-          # background the Coder agent init script and run opencode web
-          # as the main process.
-          command = ["sh", "-c"]
+          # sets up git/gh identity then execs "$@". We only set args
+          # (Docker CMD) so the entrypoint is preserved — tini stays as
+          # PID 1 and docker-entrypoint.sh runs before our command.
           args = [
+            "sh", "-c",
             "sh -c \"$CODER_AGENT_INIT_SCRIPT\" & exec opencode web --hostname 0.0.0.0 --port 4096",
           ]
 
