@@ -38,9 +38,16 @@ jobs:
       id-token: write
       issues: write
     steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       # --- Docker image build + push (tagged with git SHA) ---
@@ -94,4 +101,4 @@ jobs:
           force: ${{ inputs.force }}
           publish_repo: self
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
