@@ -53,7 +53,6 @@ data "coder_parameter" "gh_token" {
   description  = "PAT with repo, read:org, workflow scopes. Used for gh CLI and bot identity."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -63,7 +62,6 @@ data "coder_parameter" "anthropic_api_key" {
   description  = "API key for Claude. At least one LLM provider key is required."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -73,7 +71,6 @@ data "coder_parameter" "openai_api_key" {
   description  = "API key for OpenAI models. Optional if another provider key is set."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -83,7 +80,6 @@ data "coder_parameter" "github_webhook_secret" {
   description  = "HMAC secret for verifying GitHub webhook deliveries. Required to receive webhooks."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
