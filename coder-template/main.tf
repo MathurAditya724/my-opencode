@@ -53,7 +53,6 @@ data "coder_parameter" "gh_token" {
   description  = "PAT with repo, read:org, workflow scopes. Used for gh CLI and bot identity."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -63,7 +62,6 @@ data "coder_parameter" "anthropic_api_key" {
   description  = "API key for Claude. At least one LLM provider key is required."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -73,7 +71,6 @@ data "coder_parameter" "openai_api_key" {
   description  = "API key for OpenAI models. Optional if another provider key is set."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -83,7 +80,6 @@ data "coder_parameter" "github_webhook_secret" {
   description  = "HMAC secret for verifying GitHub webhook deliveries. Required to receive webhooks."
   type         = "string"
   mutable      = true
-  ephemeral    = true
   default      = ""
 }
 
@@ -187,6 +183,16 @@ resource "coder_app" "opencode" {
   }
 }
 
+# OpenCode server — started by the Coder agent after it connects.
+# Runs in the background so the script exits immediately; the agent
+# keeps the process supervised and its logs visible in the Coder UI.
+resource "coder_script" "opencode" {
+  agent_id     = coder_agent.main.id
+  display_name = "OpenCode Server"
+  script       = "opencode serve --hostname 0.0.0.0 --port \"$PORT\" > /tmp/opencode.log 2>&1 &"
+  run_on_start = true
+}
+
 # --- Kubernetes deployment ---
 
 resource "kubernetes_deployment_v1" "workspace" {
@@ -254,9 +260,14 @@ resource "kubernetes_deployment_v1" "workspace" {
           # sets up git/gh identity then execs "$@". We only set args
           # (Docker CMD) so the entrypoint is preserved — tini stays as
           # PID 1 and docker-entrypoint.sh runs before our command.
+          #
+          # The Coder agent init script runs as the foreground process so
+          # any failure is immediately visible in pod logs. OpenCode is
+          # started separately by the coder_script.opencode resource
+          # after the agent connects.
           args = [
             "sh", "-c",
-            "sh -c \"$CODER_AGENT_INIT_SCRIPT\" & exec opencode web --hostname 0.0.0.0 --port 4096",
+            "exec sh -c \"$CODER_AGENT_INIT_SCRIPT\"",
           ]
 
           env {
