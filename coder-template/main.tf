@@ -273,24 +273,12 @@ resource "kubernetes_deployment_v1" "workspace" {
             "sh", "-c",
             join("\n", [
               "cat > /tmp/coder-init.sh << 'CODER_INIT_EOF'",
-              replace(
-                replace(
-                  coder_agent.main.init_script,
-                  "BINARY_URL=bin/",
-                  "BINARY_URL=https://coder.sentry.dev/bin/"
-                ),
-                "CODER_AGENT_URL=\"\"",
-                "CODER_AGENT_URL=\"https://coder.sentry.dev\""
-              ),
+              coder_agent.main.init_script,
               "CODER_INIT_EOF",
               "chmod +x /tmp/coder-init.sh",
               "exec /tmp/coder-init.sh",
             ]),
           ]
-          env {
-            name  = "CODER_AGENT_TOKEN"
-            value = coder_agent.main.token
-          }
           env {
             name  = "GH_TOKEN"
             value = data.coder_parameter.gh_token.value
