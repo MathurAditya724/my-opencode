@@ -21,17 +21,13 @@ GitHub  ──email──▶  gh@yourdomain.com
                     Email Worker (dumb pipe)
                        ├─ message.forward(FORWARD_TO)        ──▶ your real inbox (always)
                        └─ if From ∈ D1 allowed_senders:
-                              POST {from, to, subject,
-                                    message_id, in_reply_to,
-                                    references, list_id,
-                                    x_github_reason,
-                                    x_github_sender}
-                              HMAC-signed application/json
-                            │
-                            ▼
-                  https://your-host/webhooks/email
-                       opentower plugin
-                       (verify → identify → gh fetch → dispatch)
+                               POST {headers + body}
+                               HMAC-signed application/json
+                             │
+                             ▼
+                   https://your-host/webhooks/email
+                        opentower plugin
+                        (verify → dedup → dispatch)
 ```
 
 ## Setup
