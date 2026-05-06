@@ -256,22 +256,20 @@ resource "kubernetes_deployment_v1" "workspace" {
           image             = var.docker_image
           image_pull_policy = "Always"
 
-          # Do NOT set `command` — preserve the image's ENTRYPOINT
-          # [tini, --, docker-entrypoint.sh] which handles volume ownership,
-          # git init, and gh/git identity setup before handing off to the
-          # Coder agent init script via exec "$@".
-          #
-          # `args` overrides Docker CMD. The init script is delivered as an
-          # env var because Kubernetes JSON-serializes args (turning real
-          # newlines into literal \n), breaking heredoc syntax. `printenv`
-          # faithfully writes the newlines back out.
-          args = [
-            "sh", "-c",
-            "printenv CODER_AGENT_INIT_SCRIPT > /tmp/coder-init.sh && chmod +x /tmp/coder-init.sh && exec /tmp/coder-init.sh",
-          ]
+          # Override ENTRYPOINT and CMD to run coder agent directly using
+          # the binary already in the image (/usr/bin/coder v2.33.1).
+          # Use the internal K8s service URL (http://coder.coder-prod) to
+          # avoid hairpin NAT issues when accessing coder.sentry.dev from
+          # within the same cluster. CODER_AGENT_TOKEN passed as env var.
+          command = ["/usr/bin/coder"]
+          args    = ["agent"]
           env {
-            name  = "CODER_AGENT_INIT_SCRIPT"
-            value = coder_agent.main.init_script
+            name  = "CODER_AGENT_URL"
+            value = "http://coder.coder-prod.svc.cluster.local"
+          }
+          env {
+            name  = "CODER_AGENT_TOKEN"
+            value = coder_agent.main.token
           }
           env {
             name  = "GH_TOKEN"
