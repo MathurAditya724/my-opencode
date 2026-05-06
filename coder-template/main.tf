@@ -261,23 +261,21 @@ resource "kubernetes_deployment_v1" "workspace" {
           # (Docker CMD) so the entrypoint is preserved — tini stays as
           # PID 1 and docker-entrypoint.sh runs before our command.
           #
-          # The Coder agent init script runs as the foreground process so
-          # any failure is immediately visible in pod logs. OpenCode is
-          # started separately by the coder_script.opencode resource
-          # after the agent connects.
+          # Interpolate coder_agent.main.init_script directly at Terraform
+          # plan time using a heredoc (same pattern as Sentry's GCE
+          # startup-script). The script is a literal string in the pod
+          # spec — no runtime shell expansion. OpenCode is started
+          # separately by coder_script.opencode after the agent connects.
           args = [
             "sh", "-c",
-            "exec sh -c \"$CODER_AGENT_INIT_SCRIPT\"",
+            join("\n", [
+              "cat > /tmp/coder-init.sh << 'CODER_INIT_EOF'",
+              coder_agent.main.init_script,
+              "CODER_INIT_EOF",
+              "chmod +x /tmp/coder-init.sh",
+              "exec /tmp/coder-init.sh",
+            ]),
           ]
-
-          env {
-            name  = "CODER_AGENT_TOKEN"
-            value = coder_agent.main.token
-          }
-          env {
-            name  = "CODER_AGENT_INIT_SCRIPT"
-            value = coder_agent.main.init_script
-          }
           env {
             name  = "GH_TOKEN"
             value = data.coder_parameter.gh_token.value
