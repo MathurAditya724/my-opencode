@@ -6,7 +6,7 @@
   "type": "module",
   "dependencies": {
     "@opencode-ai/plugin": "^1.14.30",
-    "@loreai/opencode": "latest",
+    "@loreai/opencode": "0.12.0",
     "opentower": "file:./packages/opentower"
   }
 }
