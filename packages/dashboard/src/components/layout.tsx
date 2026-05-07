@@ -1,8 +1,26 @@
 import { useServers } from "@/hooks/use-servers"
 import { ApiClient } from "@/lib/api"
+import { type ServerFormValues, serverFormSchema } from "@/lib/schemas"
 import { cn } from "@/lib/utils"
-import { Check, GitPullRequest, LayoutDashboard, Loader2, Pencil, Plus, Server, Trash2, X, Zap } from "lucide-react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import {
+  Check,
+  GitPullRequest,
+  LayoutDashboard,
+  Loader2,
+  Monitor,
+  Moon,
+  Pencil,
+  Plus,
+  Server,
+  Sun,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react"
+import { useTheme } from "next-themes"
 import { useState } from "react"
+import { useForm } from "react-hook-form"
 import { Link, NavLink, Outlet } from "react-router-dom"
 
 const navItems = [
@@ -35,7 +53,7 @@ export default function Layout() {
         )}
       >
         {/* Logo */}
-        <div className="flex h-14 items-center border-b px-3">
+        <div className={cn("flex h-14 items-center border-b px-3", collapsed && "justify-center")}>
           <Link to="/" className="flex items-center gap-2 font-semibold">
             <span className="text-xl" role="img" aria-label="outpost">
               🏕️
@@ -202,6 +220,11 @@ export default function Layout() {
           </div>
         </div>
 
+        {/* Theme toggle */}
+        <div className="border-t px-3 py-2">
+          <ThemeToggle collapsed={collapsed} />
+        </div>
+
         {/* Sidebar rail toggle — inspired by shadcn SidebarRail */}
         <button
           type="button"
@@ -229,6 +252,9 @@ export default function Layout() {
   )
 }
 
+const inputClass =
+  "w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+
 function AddServerForm({
   onAdd,
   onCancel,
@@ -236,90 +262,73 @@ function AddServerForm({
   onAdd: (cfg: { name: string; url: string; token: string; opencodeUrl?: string }) => void
   onCancel: () => void
 }) {
-  const [name, setName] = useState("")
-  const [url, setUrl] = useState("")
-  const [token, setToken] = useState("")
-  const [opencodeUrl, setOpencodeUrl] = useState("")
-  const [error, setError] = useState("")
+  const [serverError, setServerError] = useState("")
   const [testing, setTesting] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError("")
-    const trimmedUrl = url.replace(/\/+$/, "")
-    if (!trimmedUrl || !token) {
-      setError("URL and token required")
-      return
-    }
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ServerFormValues>({
+    resolver: zodResolver(serverFormSchema),
+    defaultValues: { name: "", url: "", token: "", opencodeUrl: "" },
+  })
+
+  async function onSubmit(data: ServerFormValues) {
+    setServerError("")
+    const parsed = serverFormSchema.parse(data)
+
     let hostname: string
     try {
-      hostname = new URL(trimmedUrl).hostname
+      hostname = new URL(parsed.url).hostname
     } catch {
-      setError("Invalid URL")
+      setServerError("Invalid URL")
       return
     }
-    const trimmedOpencodeUrl = opencodeUrl.replace(/\/+$/, "")
-    if (trimmedOpencodeUrl) {
-      try {
-        new URL(trimmedOpencodeUrl)
-      } catch {
-        setError("Invalid OpenCode URL")
-        return
-      }
-    }
+
     setTesting(true)
     try {
-      const client = new ApiClient(trimmedUrl, token)
+      const client = new ApiClient(parsed.url, parsed.token)
       const ok = await client.healthz()
       if (!ok) {
-        setError("Unreachable")
+        setServerError("Unreachable")
         return
       }
       await client.stats()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed")
+      setServerError(err instanceof Error ? err.message : "Failed")
       return
     } finally {
       setTesting(false)
     }
+
     onAdd({
-      name: name || hostname,
-      url: trimmedUrl,
-      token,
-      opencodeUrl: trimmedOpencodeUrl || undefined,
+      name: parsed.name || hostname,
+      url: parsed.url,
+      token: parsed.token,
+      opencodeUrl: parsed.opencodeUrl,
     })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 border-b px-3 pb-3">
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="Name (optional)"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="https://opentower.example.com"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        required
-      />
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        type="password"
-        placeholder="API Token"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        required
-      />
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="OpenCode URL (optional)"
-        value={opencodeUrl}
-        onChange={(e) => setOpencodeUrl(e.target.value)}
-      />
-      {error && <p className="text-xs text-destructive">{error}</p>}
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-2 border-b px-3 pb-3">
+      <div>
+        <input className={inputClass} placeholder="Name (optional)" {...register("name")} />
+        {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+      </div>
+      <div>
+        <input className={inputClass} placeholder="https://opentower.example.com" {...register("url")} />
+        {errors.url && <p className="text-xs text-destructive">{errors.url.message}</p>}
+      </div>
+      <div>
+        <input className={inputClass} type="password" placeholder="API Token" {...register("token")} />
+        {errors.token && <p className="text-xs text-destructive">{errors.token.message}</p>}
+      </div>
+      <div>
+        <input className={inputClass} placeholder="OpenCode URL (optional)" {...register("opencodeUrl")} />
+        {errors.opencodeUrl && <p className="text-xs text-destructive">{errors.opencodeUrl.message}</p>}
+      </div>
+      {serverError && <p className="text-xs text-destructive">{serverError}</p>}
       <div className="flex gap-1">
         <button
           type="submit"
@@ -350,90 +359,74 @@ function EditServerForm({
   onSave: (patch: { name?: string; url?: string; token?: string; opencodeUrl?: string }) => void
   onCancel: () => void
 }) {
-  const [name, setName] = useState(server.name)
-  const [url, setUrl] = useState(server.url)
-  const [token, setToken] = useState(server.token)
-  const [opencodeUrl, setOpencodeUrl] = useState(server.opencodeUrl ?? "")
-  const [error, setError] = useState("")
+  const [serverError, setServerError] = useState("")
   const [testing, setTesting] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError("")
-    const trimmedUrl = url.replace(/\/+$/, "")
-    if (!trimmedUrl || !token) {
-      setError("URL and token required")
-      return
-    }
-    try {
-      new URL(trimmedUrl)
-    } catch {
-      setError("Invalid URL")
-      return
-    }
-    const trimmedOpencodeUrl = opencodeUrl.replace(/\/+$/, "")
-    if (trimmedOpencodeUrl) {
-      try {
-        new URL(trimmedOpencodeUrl)
-      } catch {
-        setError("Invalid OpenCode URL")
-        return
-      }
-    }
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ServerFormValues>({
+    resolver: zodResolver(serverFormSchema),
+    defaultValues: {
+      name: server.name,
+      url: server.url,
+      token: server.token,
+      opencodeUrl: server.opencodeUrl ?? "",
+    },
+  })
 
-    const urlChanged = trimmedUrl !== server.url
-    const tokenChanged = token !== server.token
+  async function onSubmit(data: ServerFormValues) {
+    setServerError("")
+    const parsed = serverFormSchema.parse(data)
+
+    const urlChanged = parsed.url !== server.url
+    const tokenChanged = parsed.token !== server.token
     if (urlChanged || tokenChanged) {
       setTesting(true)
       try {
-        const client = new ApiClient(trimmedUrl, token)
+        const client = new ApiClient(parsed.url, parsed.token)
         const ok = await client.healthz()
         if (!ok) {
-          setError("Unreachable")
+          setServerError("Unreachable")
           return
         }
         await client.stats()
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed")
+        setServerError(err instanceof Error ? err.message : "Failed")
         return
       } finally {
         setTesting(false)
       }
     }
 
-    onSave({ name, url: trimmedUrl, token, opencodeUrl: trimmedOpencodeUrl || undefined })
+    onSave({
+      name: parsed.name,
+      url: parsed.url,
+      token: parsed.token,
+      opencodeUrl: parsed.opencodeUrl,
+    })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 border-b bg-accent/30 px-3 py-2">
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="https://..."
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        required
-      />
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        type="password"
-        placeholder="API Token"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        required
-      />
-      <input
-        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="OpenCode URL (optional)"
-        value={opencodeUrl}
-        onChange={(e) => setOpencodeUrl(e.target.value)}
-      />
-      {error && <p className="text-xs text-destructive">{error}</p>}
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-2 border-b bg-accent/30 px-3 py-2">
+      <div>
+        <input className={inputClass} placeholder="Name" {...register("name")} />
+        {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+      </div>
+      <div>
+        <input className={inputClass} placeholder="https://..." {...register("url")} />
+        {errors.url && <p className="text-xs text-destructive">{errors.url.message}</p>}
+      </div>
+      <div>
+        <input className={inputClass} type="password" placeholder="API Token" {...register("token")} />
+        {errors.token && <p className="text-xs text-destructive">{errors.token.message}</p>}
+      </div>
+      <div>
+        <input className={inputClass} placeholder="OpenCode URL (optional)" {...register("opencodeUrl")} />
+        {errors.opencodeUrl && <p className="text-xs text-destructive">{errors.opencodeUrl.message}</p>}
+      </div>
+      {serverError && <p className="text-xs text-destructive">{serverError}</p>}
       <div className="flex gap-1">
         <button
           type="submit"
@@ -452,5 +445,56 @@ function EditServerForm({
         </button>
       </div>
     </form>
+  )
+}
+
+function ThemeToggle({ collapsed }: { collapsed: boolean }) {
+  const { theme, setTheme } = useTheme()
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (theme === "dark") setTheme("light")
+          else if (theme === "light") setTheme("system")
+          else setTheme("dark")
+        }}
+        className="mx-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        title={`Theme: ${theme}`}
+      >
+        {theme === "dark" ? (
+          <Moon className="h-4 w-4" />
+        ) : theme === "light" ? (
+          <Sun className="h-4 w-4" />
+        ) : (
+          <Monitor className="h-4 w-4" />
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1 rounded-md border p-0.5">
+      {[
+        { value: "light", icon: Sun, label: "Light" },
+        { value: "dark", icon: Moon, label: "Dark" },
+        { value: "system", icon: Monitor, label: "System" },
+      ].map(({ value, icon: Icon, label }) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => setTheme(value)}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs",
+            theme === value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+          title={label}
+        >
+          <Icon className="h-3 w-3" />
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }

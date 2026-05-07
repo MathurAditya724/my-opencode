@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
 import type { PaginatedDispatches, PaginatedEntities, StatsResult } from "@/lib/api"
 import { entityGitHubUrl, opencodeSessionUrl, timeAgo } from "@/lib/format"
-import { useQuery } from "@tanstack/react-query"
+import { cn } from "@/lib/utils"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import {
   Activity,
   ChevronLeft,
@@ -50,6 +51,7 @@ export default function DashboardPage() {
     queryKey: ["dashboard-entities", client?.baseUrl, entityCursors[entityPage]],
     queryFn: () => client!.entities({ limit: 10, cursor: entityCursors[entityPage] || undefined }),
     enabled: !!client,
+    placeholderData: keepPreviousData,
   })
 
   const dispatches = useQuery<PaginatedDispatches>({
@@ -61,6 +63,7 @@ export default function DashboardPage() {
         cursor: dispatchCursors[dispatchPage] || undefined,
       }),
     enabled: !!client,
+    placeholderData: keepPreviousData,
   })
 
   function entityNextPage() {
@@ -142,7 +145,7 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Recent Entities</CardTitle>
             <div className="flex gap-2">
               <Button variant="ghost" size="icon" onClick={() => entities.refetch()}>
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className={cn("h-4 w-4", entities.isFetching && "animate-spin")} />
               </Button>
               <Link to="/entities">
                 <Button variant="ghost" size="sm">
@@ -225,7 +228,7 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Recent Dispatches</CardTitle>
             <div className="flex gap-2">
               <Button variant="ghost" size="icon" onClick={() => dispatches.refetch()}>
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className={cn("h-4 w-4", dispatches.isFetching && "animate-spin")} />
               </Button>
               <Link to="/dispatches">
                 <Button variant="ghost" size="sm">

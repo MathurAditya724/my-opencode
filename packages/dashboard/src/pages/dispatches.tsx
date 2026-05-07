@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
 import type { PaginatedDispatches } from "@/lib/api"
 import { formatDuration, opencodeSessionUrl, timeAgo } from "@/lib/format"
-import { useQuery } from "@tanstack/react-query"
+import { cn } from "@/lib/utils"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, RefreshCw, Terminal } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
@@ -25,7 +26,7 @@ export default function DispatchesPage() {
     setStatusFilter("")
   }, [serverUrl])
 
-  const { data, isLoading, error, refetch } = useQuery<PaginatedDispatches>({
+  const { data, isLoading, isFetching, error, refetch } = useQuery<PaginatedDispatches>({
     queryKey: ["dispatches", client?.baseUrl, statusFilter, cursors[page]],
     queryFn: () =>
       client!.dispatches({
@@ -34,6 +35,7 @@ export default function DispatchesPage() {
         status: statusFilter || undefined,
       }),
     enabled: !!client,
+    placeholderData: keepPreviousData,
   })
 
   function nextPage() {
@@ -63,7 +65,7 @@ export default function DispatchesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Dispatches</h1>
         <Button variant="ghost" size="icon" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
         </Button>
       </div>
 

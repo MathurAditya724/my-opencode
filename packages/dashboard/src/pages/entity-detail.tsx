@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
 import type { EntityDetail } from "@/lib/api"
 import { entityGitHubUrl, formatDuration, opencodeSessionUrl, timeAgo } from "@/lib/format"
-import { useQuery } from "@tanstack/react-query"
+import { cn } from "@/lib/utils"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ExternalLink, Link as LinkIcon, RefreshCw, Terminal } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
@@ -16,10 +17,11 @@ export default function EntityDetailPage() {
   const opencodeUrl = useOpencodeUrl()
   const decodedKey = decodeURIComponent(key ?? "")
 
-  const { data, isLoading, error, refetch } = useQuery<EntityDetail>({
+  const { data, isLoading, isFetching, error, refetch } = useQuery<EntityDetail>({
     queryKey: ["entity", client?.baseUrl, decodedKey],
     queryFn: () => client!.entity(decodedKey),
     enabled: !!client && !!decodedKey,
+    placeholderData: keepPreviousData,
   })
 
   if (!decodedKey) return <p>Invalid entity key</p>
@@ -36,7 +38,7 @@ export default function EntityDetailPage() {
           <h1 className="font-mono text-xl font-bold">{decodedKey}</h1>
         </div>
         <Button variant="ghost" size="icon" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
         </Button>
       </div>
 

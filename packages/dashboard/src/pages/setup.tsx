@@ -4,70 +4,62 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useServers } from "@/hooks/use-servers"
 import { ApiClient } from "@/lib/api"
+import { type ServerFormValues, serverFormSchema } from "@/lib/schemas"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
 import { useState } from "react"
+import { useForm } from "react-hook-form"
 import { useNavigate } from "react-router-dom"
 
 export default function SetupPage() {
   const { add } = useServers()
   const navigate = useNavigate()
-  const [name, setName] = useState("")
-  const [url, setUrl] = useState("")
-  const [token, setToken] = useState("")
-  const [opencodeUrl, setOpencodeUrl] = useState("")
-  const [error, setError] = useState("")
+  const [serverError, setServerError] = useState("")
   const [testing, setTesting] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError("")
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ServerFormValues>({
+    resolver: zodResolver(serverFormSchema),
+    defaultValues: { name: "", url: "", token: "", opencodeUrl: "" },
+  })
 
-    const trimmedUrl = url.replace(/\/+$/, "")
-    if (!trimmedUrl) {
-      setError("URL is required")
-      return
-    }
-    if (!token) {
-      setError("Token is required")
-      return
-    }
+  async function onSubmit(data: ServerFormValues) {
+    setServerError("")
+    const parsed = serverFormSchema.parse(data)
 
     let hostname: string
     try {
-      hostname = new URL(trimmedUrl).hostname
+      hostname = new URL(parsed.url).hostname
     } catch {
-      setError("Invalid URL")
+      setServerError("Invalid URL")
       return
-    }
-
-    const trimmedOpencodeUrl = opencodeUrl.replace(/\/+$/, "")
-    if (trimmedOpencodeUrl) {
-      try {
-        new URL(trimmedOpencodeUrl)
-      } catch {
-        setError("Invalid OpenCode URL")
-        return
-      }
     }
 
     setTesting(true)
     try {
-      const client = new ApiClient(trimmedUrl, token)
+      const client = new ApiClient(parsed.url, parsed.token)
       const ok = await client.healthz()
       if (!ok) {
-        setError("Could not reach the server. Check the URL.")
+        setServerError("Could not reach the server. Check the URL.")
         return
       }
       await client.stats()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Connection failed"
-      setError(msg)
+      setServerError(err instanceof Error ? err.message : "Connection failed")
       return
     } finally {
       setTesting(false)
     }
 
-    add({ name: name || hostname, url: trimmedUrl, token, opencodeUrl: trimmedOpencodeUrl || undefined })
+    add({
+      name: parsed.name || hostname,
+      url: parsed.url,
+      token: parsed.token,
+      opencodeUrl: parsed.opencodeUrl,
+    })
     navigate("/")
   }
 
@@ -84,51 +76,32 @@ export default function SetupPage() {
           <CardDescription>Connect to an Outpost server to view events, dispatches, and sessions.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name (optional)</Label>
-              <Input
-                id="name"
-                placeholder="Production, Staging..."
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+              <Input id="name" placeholder="Production, Staging..." {...register("name")} />
+              {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="url">Server URL</Label>
-              <Input
-                id="url"
-                placeholder="https://your-server.example.com"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                required
-              />
+              <Input id="url" placeholder="https://your-server.example.com" {...register("url")} />
+              {errors.url && <p className="text-xs text-destructive">{errors.url.message}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="token">API Token</Label>
-              <Input
-                id="token"
-                type="password"
-                placeholder="API Token"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                required
-              />
+              <Input id="token" type="password" placeholder="API Token" {...register("token")} />
+              {errors.token && <p className="text-xs text-destructive">{errors.token.message}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="opencodeUrl">OpenCode URL (optional)</Label>
-              <Input
-                id="opencodeUrl"
-                placeholder="https://your-opencode.example.com"
-                value={opencodeUrl}
-                onChange={(e) => setOpencodeUrl(e.target.value)}
-              />
+              <Input id="opencodeUrl" placeholder="https://your-opencode.example.com" {...register("opencodeUrl")} />
+              {errors.opencodeUrl && <p className="text-xs text-destructive">{errors.opencodeUrl.message}</p>}
               <p className="text-xs text-muted-foreground">
                 Base URL of your OpenCode web UI for viewing sessions. If omitted, session links will use relative
                 paths.
               </p>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {serverError && <p className="text-sm text-destructive">{serverError}</p>}
             <Button type="submit" className="w-full" disabled={testing}>
               {testing && <Loader2 className="animate-spin" />}
               {testing ? "Testing connection..." : "Connect"}
