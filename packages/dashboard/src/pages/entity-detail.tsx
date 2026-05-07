@@ -6,7 +6,7 @@ import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
 import type { EntityDetail } from "@/lib/api"
 import { entityGitHubUrl, formatDuration, opencodeSessionUrl, timeAgo } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ExternalLink, Link as LinkIcon, RefreshCw, Terminal } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
@@ -21,6 +21,7 @@ export default function EntityDetailPage() {
     queryKey: ["entity", client?.baseUrl, decodedKey],
     queryFn: () => client!.entity(decodedKey),
     enabled: !!client && !!decodedKey,
+    placeholderData: keepPreviousData,
   })
 
   if (!decodedKey) return <p>Invalid entity key</p>
