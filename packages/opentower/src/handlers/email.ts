@@ -13,6 +13,13 @@ import { verifySha256Signature } from "../hmac"
 import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
 
+// GitHub notification reasons that cannot cause a feedback loop when the
+// sender matches the bot. CI results, security alerts, and similar
+// automated notifications are safe to process even from the bot's own
+// account — the bot responding to them won't generate another email of
+// the same kind.
+const SELF_LOOP_SAFE_REASONS: ReadonlySet<string> = new Set(["ci_activity", "security_alert"])
+
 export type EmailEvent = {
   from: string
   to: string
@@ -60,9 +67,20 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     return c.json({ error: "missing 'message_id' in event" }, 400)
   }
 
-  // Self-loop guard: drop emails triggered by the bot's own activity.
   const ghSender = event.x_github_sender
-  if (botLogin && ghSender && ghSender.toLowerCase() === botLogin.toLowerCase()) {
+  const reason = (event.x_github_reason ?? "forwarded").toLowerCase()
+  const triggerEvent = `email.${reason}`
+
+  // Self-loop guard: drop emails triggered by the bot's own activity,
+  // but only for reasons that can actually cause feedback loops.
+  // Automated notifications like CI results are safe — responding to
+  // a CI failure won't generate another CI email.
+  if (
+    botLogin &&
+    ghSender &&
+    ghSender.toLowerCase() === botLogin.toLowerCase() &&
+    !SELF_LOOP_SAFE_REASONS.has(reason)
+  ) {
     return c.json({
       ok: true,
       message_id: event.message_id,
@@ -80,9 +98,6 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       dispatched: [],
     })
   }
-
-  const reason = (event.x_github_reason ?? "forwarded").toLowerCase()
-  const triggerEvent = `email.${reason}`
   const deliveryId = crypto.randomUUID()
 
   Sentry.logger.info("webhook.received", {
