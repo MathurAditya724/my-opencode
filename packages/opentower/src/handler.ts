@@ -7,6 +7,7 @@ import * as Sentry from "@sentry/bun"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import type { Dedup } from "./dedup"
+import type { EntityResolver } from "./entity-resolver"
 import { apiDispatchesHandler, apiEntitiesHandler, apiEntityDetailHandler, apiStatsHandler } from "./handlers/api"
 import { emailWebhookHandler } from "./handlers/email"
 import { githubWebhookHandler } from "./handlers/github"
@@ -24,6 +25,7 @@ export type AppEnv = {
     githubTriggers: NormalizedTrigger[]
     emailTriggers: NormalizedTrigger[]
     store: LifecycleStore
+    entityResolver: EntityResolver | null
   }
 }
 
@@ -41,6 +43,7 @@ export function createApp(opts: {
   botLogin: string | null
   store: LifecycleStore
   apiToken: string
+  entityResolver: EntityResolver | null
 }): Hono<AppEnv> {
   const githubTriggers = opts.triggers.filter((t) => t.source === "github_webhook")
   const emailTriggers = opts.triggers.filter((t) => t.source === "email")
@@ -114,6 +117,7 @@ export function createApp(opts: {
     c.set("githubTriggers", githubTriggers)
     c.set("emailTriggers", emailTriggers)
     c.set("store", opts.store)
+    c.set("entityResolver", opts.entityResolver)
     await next()
   })
 

@@ -11,6 +11,7 @@ import * as Sentry from "@sentry/bun"
 import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
 import { makeDedup } from "./dedup"
+import { createEntityResolver } from "./entity-resolver"
 import { createApp } from "./handler"
 import { makePipeline } from "./pipeline"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
@@ -117,6 +118,15 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       batchWindowMs,
     })
 
+    const entityResolver = createEntityResolver()
+    if (entityResolver) {
+      console.log("[opentower] AI entity resolver enabled (ANTHROPIC_API_KEY set)")
+    } else if (emailTriggerCount > 0) {
+      console.warn(
+        "[opentower] WARNING: ANTHROPIC_API_KEY not set -- AI entity resolution for non-GitHub emails disabled",
+      )
+    }
+
     const apiToken = process.env.OPENTOWER_API_TOKEN ?? ""
     if (!apiToken) {
       console.warn("[opentower] WARNING: OPENTOWER_API_TOKEN not set -- /api/* endpoints will reject with 503")
@@ -131,6 +141,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       botLogin,
       store,
       apiToken,
+      entityResolver,
     })
 
     console.log(`[opentower] starting Bun.serve on port ${port}...`)

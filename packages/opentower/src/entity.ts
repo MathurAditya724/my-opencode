@@ -6,6 +6,7 @@
 // Also extracts linked issue numbers from PR bodies so the lifecycle
 // store can link issue→PR for session reuse.
 
+import type { EntityResolver } from "./entity-resolver"
 import { lookup, lookupString } from "./template"
 
 export type EntityKey = {
@@ -21,9 +22,15 @@ export type EntityKey = {
 
 // Extract entity key from a GitHub webhook payload or email event.
 // Returns null for events that don't map to a trackable entity.
-export function extractEntityKey(event: string, payload: unknown): EntityKey | null {
+// For email events with no regex match, falls back to the AI resolver
+// if one is provided.
+export async function extractEntityKey(
+  event: string,
+  payload: unknown,
+  resolver?: EntityResolver | null,
+): Promise<EntityKey | null> {
   if (event.startsWith("email.")) {
-    return extractEmailEntityKey(payload)
+    return extractEmailEntityKey(payload, resolver)
   }
 
   const repo = lookupString(payload, "repository.full_name")
@@ -99,7 +106,7 @@ export function extractEntityKey(event: string, payload: unknown): EntityKey | n
 //   message_id / references: <owner/repo/issues/42/...@github.com>
 //                            <owner/repo/pull/43/...@github.com>
 //   subject:                 Re: [owner/repo] Title (#42)
-function extractEmailEntityKey(payload: unknown): EntityKey | null {
+async function extractEmailEntityKey(payload: unknown, resolver?: EntityResolver | null): Promise<EntityKey | null> {
   const o = payload as Record<string, unknown> | null
   if (!o || typeof o !== "object") return null
 
@@ -115,7 +122,29 @@ function extractEmailEntityKey(payload: unknown): EntityKey | null {
 
   // 2. Fall back to subject line — format: "Re: [owner/repo] Title (#42)"
   const subject = typeof o.subject === "string" ? o.subject : ""
-  return parseGitHubSubject(subject)
+  const subjectResult = parseGitHubSubject(subject)
+  if (subjectResult) return subjectResult
+
+  // 3. Fall back to AI resolver for non-GitHub emails (Sentry, etc.)
+  if (!resolver) return null
+
+  const result = await resolver.resolve({
+    from: typeof o.from === "string" ? o.from : "",
+    to: typeof o.to === "string" ? o.to : "",
+    subject,
+    message_id: messageId,
+    body_text: typeof o.body_text === "string" ? o.body_text : null,
+    list_id: typeof o.list_id === "string" ? o.list_id : null,
+  })
+
+  if (!result.repo || !result.number) return null
+  return {
+    key: `${result.repo}#${result.number}`,
+    repo: result.repo,
+    number: result.number,
+    kind: result.kind ?? "issue",
+    linkedIssues: [],
+  }
 }
 
 // Parse owner/repo and issue/PR number from a GitHub email Message-ID or References header.

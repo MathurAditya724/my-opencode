@@ -4,6 +4,7 @@
 // self-loop guard (ignore_authors), and dispatch via the pipeline.
 
 import * as Sentry from "@sentry/bun"
+import type { EntityResolver } from "./entity-resolver"
 import { extractEntityKey } from "./entity"
 import type { Pipeline } from "./pipeline"
 import { renderTemplate } from "./template"
@@ -52,7 +53,7 @@ export function evaluateIgnoreAuthors(ignoreAuthors: string[] | undefined, sende
   return null
 }
 
-export function evaluateAndDispatch(opts: {
+export async function evaluateAndDispatch(opts: {
   triggers: NormalizedTrigger[]
   event: string
   action: string | null
@@ -62,11 +63,12 @@ export function evaluateAndDispatch(opts: {
   deliveryId: string
   templateContext: Record<string, unknown>
   pipeline: Pipeline
-}): { dispatched: string[]; skipped: SkippedDispatch[] } {
+  entityResolver?: EntityResolver | null
+}): Promise<{ dispatched: string[]; skipped: SkippedDispatch[] }> {
   const dispatched: string[] = []
   const skipped: SkippedDispatch[] = []
 
-  const entityKey = extractEntityKey(opts.event, opts.payload)
+  const entityKey = await extractEntityKey(opts.event, opts.payload, opts.entityResolver)
 
   const matched = findMatching(opts.triggers, opts.event, opts.action)
   if (matched.length === 0) {

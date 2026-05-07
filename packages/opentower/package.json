@@ -18,8 +18,11 @@
     "build": "echo 'opentower ships raw TS — no build step needed'"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.75",
+    "@sentry/bun": "^9.0.0",
+    "ai": "^6.0.175",
     "hono": "^4.0.0",
-    "@sentry/bun": "^9.0.0"
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.1.1"

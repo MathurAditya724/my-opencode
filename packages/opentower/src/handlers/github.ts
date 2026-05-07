@@ -58,7 +58,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
     repo: lookupString(payload, "repository.full_name") ?? "",
   })
 
-  const { dispatched, skipped } = evaluateAndDispatch({
+  const { dispatched, skipped } = await evaluateAndDispatch({
     triggers,
     event,
     action,

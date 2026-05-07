@@ -111,7 +111,8 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
     body_html: event.body_html,
   }
 
-  const { dispatched, skipped } = evaluateAndDispatch({
+  const entityResolver = c.get("entityResolver")
+  const { dispatched, skipped } = await evaluateAndDispatch({
     triggers,
     event: triggerEvent,
     action: null,
@@ -126,6 +127,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
       payload: emailPayload,
     },
     pipeline,
+    entityResolver,
   })
 
   return c.json({
