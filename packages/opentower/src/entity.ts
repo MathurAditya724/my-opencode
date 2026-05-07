@@ -106,14 +106,11 @@ function extractEmailEntityKey(payload: unknown): EntityKey | null {
   // 1. Try message_id and references — most reliable, encodes repo + number + type.
   //    Format: <owner/repo/issues/N/...@github.com> or <owner/repo/pull/N/...@github.com>
   const messageId = typeof o.message_id === "string" ? o.message_id : ""
-  const references = Array.isArray(o.references)
-    ? o.references.filter((s): s is string => typeof s === "string")
-    : []
+  const references = Array.isArray(o.references) ? o.references.filter((s): s is string => typeof s === "string") : []
 
-  const refResult = parseGitHubMessageRef(messageId) ?? references.reduce<EntityKey | null>(
-    (found, ref) => found ?? parseGitHubMessageRef(ref),
-    null,
-  )
+  const refResult =
+    parseGitHubMessageRef(messageId) ??
+    references.reduce<EntityKey | null>((found, ref) => found ?? parseGitHubMessageRef(ref), null)
   if (refResult) return refResult
 
   // 2. Fall back to subject line — format: "Re: [owner/repo] Title (#42)"
@@ -124,7 +121,7 @@ function extractEmailEntityKey(payload: unknown): EntityKey | null {
 // Parse owner/repo and issue/PR number from a GitHub email Message-ID or References header.
 // Example: <MathurAditya724/outpost/pull/54/c1234567@github.com>
 //          <MathurAditya724/outpost/issues/42/890abcde@github.com>
-const GITHUB_REF_RE = /<?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(issues|pull)\/(\d+)\//
+const GITHUB_REF_RE = /<?([A-Za-z0-9_.+-]+\/[A-Za-z0-9_.+-]+)\/(issues|pull)\/(\d+)\//
 
 function parseGitHubMessageRef(ref: string): EntityKey | null {
   const m = GITHUB_REF_RE.exec(ref)
@@ -132,13 +129,13 @@ function parseGitHubMessageRef(ref: string): EntityKey | null {
   const repo = m[1]
   const kind = m[2] === "pull" ? "pull_request" : "issue"
   const number = Number(m[3])
-  return { key: `${repo}#${number}`, repo, number, kind: kind as EntityKey["kind"], linkedIssues: [] }
+  return { key: `${repo}#${number}`, repo, number, kind, linkedIssues: [] }
 }
 
 // Parse owner/repo and number from a GitHub email subject line.
 // Example: "Re: [MathurAditya724/outpost] Fix CI (#54)"
 //          "[owner/repo] New issue title (#42)"
-const GITHUB_SUBJECT_RE = /\[([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\].*\(#(\d+)\)/
+const GITHUB_SUBJECT_RE = /\[([A-Za-z0-9_.+-]+\/[A-Za-z0-9_.+-]+)\].*\(#(\d+)\)/
 
 function parseGitHubSubject(subject: string): EntityKey | null {
   const m = GITHUB_SUBJECT_RE.exec(subject)

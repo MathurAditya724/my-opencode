@@ -150,6 +150,7 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
        ON CONFLICT(entity_key) DO UPDATE SET
          session_id = excluded.session_id,
          share_url  = COALESCE(excluded.share_url, entities.share_url),
+         kind       = CASE WHEN excluded.kind = 'pull_request' THEN 'pull_request' ELSE entities.kind END,
          agent      = excluded.agent,
          updated_at = datetime('now')`,
     ),
