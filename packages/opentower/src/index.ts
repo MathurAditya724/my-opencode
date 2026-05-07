@@ -4,10 +4,10 @@
 // observability (traces, structured logs, error tracking).
 // Listener on WEBHOOK_PORT (default 5050). Trigger config in webhooks.json.
 
-import type { Plugin } from "@opencode-ai/plugin"
-import * as Sentry from "@sentry/bun"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import type { Plugin } from "@opencode-ai/plugin"
+import * as Sentry from "@sentry/bun"
 import { resolveBotLogin } from "./bot-identity"
 import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
 import { makeDedup } from "./dedup"
@@ -68,8 +68,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
 
     const port = cfg.port ?? Number(process.env.WEBHOOK_PORT ?? "5050")
     const secret = cfg.secret ?? process.env.GITHUB_WEBHOOK_SECRET ?? ""
-    const emailSecret =
-      cfg.email_secret ?? process.env.EMAIL_WEBHOOK_SECRET ?? ""
+    const emailSecret = cfg.email_secret ?? process.env.EMAIL_WEBHOOK_SECRET ?? ""
     const timeoutMs = cfg.timeout_ms ?? 1_800_000
     const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
     const defaultCwd = cfg.default_cwd ?? ctx.directory
@@ -89,20 +88,14 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const emailTriggerCount = triggers.filter((t) => t.source === "email").length
 
     if (triggers.length === 0) {
-      console.log(
-        `[opentower] no triggers configured (looked at ${configPath()}) -- listener disabled`,
-      )
+      console.log(`[opentower] no triggers configured (looked at ${configPath()}) -- listener disabled`)
       return {}
     }
     if (githubTriggerCount > 0 && !secret) {
-      console.warn(
-        `[opentower] WARNING: no GitHub HMAC secret configured -- /webhooks/github will reject with 503`,
-      )
+      console.warn("[opentower] WARNING: no GitHub HMAC secret configured -- /webhooks/github will reject with 503")
     }
     if (emailTriggerCount > 0 && !emailSecret) {
-      console.warn(
-        `[opentower] WARNING: no email HMAC secret configured -- /webhooks/email will reject with 503`,
-      )
+      console.warn("[opentower] WARNING: no email HMAC secret configured -- /webhooks/email will reject with 503")
     }
 
     const batchWindowMs = cfg.batch_window_ms ?? 5_000
@@ -110,8 +103,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const semaphore = makeSemaphore(maxConcurrent)
     const drainCounter = makeDrainCounter()
 
-    const dbPath = process.env.LIFECYCLE_DB_PATH
-      ?? join(homedir(), "dev", ".opencode", "lifecycle.db")
+    const dbPath = process.env.LIFECYCLE_DB_PATH ?? join(homedir(), "dev", ".opencode", "lifecycle.db")
     const store = openLifecycleStore(dbPath)
     console.log(`[opentower] lifecycle store opened at ${dbPath}`)
 
@@ -125,6 +117,11 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       batchWindowMs,
     })
 
+    const apiToken = process.env.OPENTOWER_API_TOKEN ?? ""
+    if (!apiToken) {
+      console.warn("[opentower] WARNING: OPENTOWER_API_TOKEN not set -- /api/* endpoints will reject with 503")
+    }
+
     const app = createApp({
       secret,
       emailSecret,
@@ -132,6 +129,8 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       dedup,
       pipeline,
       botLogin,
+      store,
+      apiToken,
     })
 
     console.log(`[opentower] starting Bun.serve on port ${port}...`)
@@ -149,19 +148,15 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const onShutdown = async (sig: NodeJS.Signals) => {
       if (stopping) return
       stopping = true
-      console.log(
-        `[opentower] received ${sig}, closing listener (in-flight: ${drainCounter.inFlight()})`,
-      )
+      console.log(`[opentower] received ${sig}, closing listener (in-flight: ${drainCounter.inFlight()})`)
       server.stop(true)
       const drainTimeoutMs = 25_000
       try {
         await Promise.race([
           drainCounter.wait(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("drain timeout")), drainTimeoutMs),
-          ),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("drain timeout")), drainTimeoutMs)),
         ])
-        console.log(`[opentower] all dispatches drained`)
+        console.log("[opentower] all dispatches drained")
       } catch {
         console.warn(
           `[opentower] drain timeout after ${drainTimeoutMs}ms -- ${drainCounter.inFlight()} dispatch(es) still in flight`,

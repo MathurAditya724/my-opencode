@@ -26,10 +26,7 @@ export function lookup(ctx: unknown, path: string): unknown {
 }
 
 // {{ a.b.c }} → ctx.a.b.c. Missing → empty string. Objects → JSON.
-export function renderTemplate(
-  template: string,
-  ctx: Record<string, unknown>,
-): string {
+export function renderTemplate(template: string, ctx: Record<string, unknown>): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.[\]]+)\s*\}\}/g, (_m, path) => {
     const value = lookup(ctx, String(path))
     if (value === undefined || value === null) return ""

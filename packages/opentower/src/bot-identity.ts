@@ -17,9 +17,7 @@ export async function resolveBotLogin(): Promise<string | null> {
     ])
     clearTimeout(timer)
     if (exitCode !== 0) {
-      console.warn(
-        `[opentower] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`,
-      )
+      console.warn(`[opentower] gh api user exit=${exitCode} stderr=${stderr.trim().slice(0, 200)}`)
       return null
     }
     const login = stdout.trim()

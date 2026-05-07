@@ -6,8 +6,8 @@
 // message_id, and pass the full email content to the agent. The agent
 // decides what to do.
 
-import type { Context } from "hono"
 import * as Sentry from "@sentry/bun"
+import type { Context } from "hono"
 import type { AppEnv } from "../handler"
 import { verifySha256Signature } from "../hmac"
 import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
@@ -50,10 +50,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   try {
     event = parseEmailEvent(new TextDecoder("utf-8").decode(body.bytes))
   } catch (err) {
-    return c.json(
-      { error: "invalid event body", detail: String(err) },
-      400,
-    )
+    return c.json({ error: "invalid event body", detail: String(err) }, 400)
   }
 
   if (!event.from) {
@@ -65,11 +62,7 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
 
   // Self-loop guard: drop emails triggered by the bot's own activity.
   const ghSender = event.x_github_sender
-  if (
-    botLogin &&
-    ghSender &&
-    ghSender.toLowerCase() === botLogin.toLowerCase()
-  ) {
+  if (botLogin && ghSender && ghSender.toLowerCase() === botLogin.toLowerCase()) {
     return c.json({
       ok: true,
       message_id: event.message_id,
@@ -158,17 +151,14 @@ function parseEmailEvent(raw: string): EmailEvent {
     }
     return v
   }
-  const strOrNull = (v: unknown): string | null =>
-    typeof v === "string" ? v : null
+  const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null)
   return {
     from: str(o.from, "from"),
     to: str(o.to, "to"),
     subject: str(o.subject, "subject"),
     message_id: str(o.message_id, "message_id"),
     in_reply_to: strOrNull(o.in_reply_to),
-    references: Array.isArray(o.references)
-      ? o.references.filter((s): s is string => typeof s === "string")
-      : [],
+    references: Array.isArray(o.references) ? o.references.filter((s): s is string => typeof s === "string") : [],
     list_id: strOrNull(o.list_id),
     x_github_reason: strOrNull(o.x_github_reason),
     x_github_sender: strOrNull(o.x_github_sender),

@@ -1,8 +1,8 @@
 // Hono handler for POST /webhooks/github. Verifies HMAC, dedupes by
 // X-GitHub-Delivery, runs the trigger pipeline, and dispatches.
 
-import type { Context } from "hono"
 import * as Sentry from "@sentry/bun"
+import type { Context } from "hono"
 import type { AppEnv } from "../handler"
 import { verifyGithubSignature } from "../hmac"
 import { readBodyBytes } from "../http"
@@ -23,10 +23,7 @@ export async function githubWebhookHandler(c: Context<AppEnv>) {
   const event = c.req.header("x-github-event")
   const deliveryId = c.req.header("x-github-delivery")
   if (!event || !deliveryId) {
-    return c.json(
-      { error: "missing required headers (x-github-event, x-github-delivery)" },
-      400,
-    )
+    return c.json({ error: "missing required headers (x-github-event, x-github-delivery)" }, 400)
   }
 
   const body = await readBodyBytes(c.req.raw)

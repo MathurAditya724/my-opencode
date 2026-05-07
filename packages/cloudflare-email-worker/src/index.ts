@@ -31,9 +31,7 @@ export interface Env {
   FORWARD_TO?: string
 }
 
-type Pattern =
-  | { kind: "exact"; value: string }
-  | { kind: "regex"; re: RegExp }
+type Pattern = { kind: "exact"; value: string } | { kind: "regex"; re: RegExp }
 
 export default {
   async email(message, env, _ctx) {
@@ -68,9 +66,7 @@ export default {
     const rawText = new TextDecoder("utf-8", { fatal: false }).decode(rawBytes)
     const { text, html } = extractBody(rawText)
 
-    const references = (message.headers.get("references") ?? "")
-      .split(/\s+/)
-      .filter(Boolean)
+    const references = (message.headers.get("references") ?? "").split(/\s+/).filter(Boolean)
 
     const payload = {
       from: message.from,
@@ -87,10 +83,7 @@ export default {
     }
 
     const body = JSON.stringify(payload)
-    const sig = await hmacSha256Hex(
-      env.EMAIL_WEBHOOK_SECRET,
-      new TextEncoder().encode(body),
-    )
+    const sig = await hmacSha256Hex(env.EMAIL_WEBHOOK_SECRET, new TextEncoder().encode(body))
 
     const res = await fetch(env.WEBHOOK_URL, {
       method: "POST",
@@ -165,9 +158,7 @@ function compileRows(rows: { pattern: string; kind: string }[]): Pattern[] {
   const out: Pattern[] = []
   for (const row of rows) {
     if (row.kind === "regex") {
-      const body = row.pattern.startsWith("/") && row.pattern.endsWith("/")
-        ? row.pattern.slice(1, -1)
-        : row.pattern
+      const body = row.pattern.startsWith("/") && row.pattern.endsWith("/") ? row.pattern.slice(1, -1) : row.pattern
       try {
         out.push({ kind: "regex", re: new RegExp(body, "i") })
       } catch {
@@ -184,9 +175,7 @@ async function handleSeed(db: D1Database): Promise<Response> {
   let inserted = 0
   for (const s of SEED_SENDERS) {
     const { meta } = await db
-      .prepare(
-        "INSERT INTO allowed_senders (pattern, kind) VALUES (?, ?) ON CONFLICT (pattern) DO NOTHING",
-      )
+      .prepare("INSERT INTO allowed_senders (pattern, kind) VALUES (?, ?) ON CONFLICT (pattern) DO NOTHING")
       .bind(s.pattern, s.kind)
       .run()
     if (meta.changes > 0) inserted++
@@ -194,12 +183,9 @@ async function handleSeed(db: D1Database): Promise<Response> {
   return Response.json({ seeded: inserted })
 }
 
-async function handleListSenders(
-  db: D1Database,
-  url: URL,
-): Promise<Response> {
-  const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 1), 200)
-  const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10) || 0, 0)
+async function handleListSenders(db: D1Database, url: URL): Promise<Response> {
+  const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 1), 200)
+  const offset = Math.max(Number.parseInt(url.searchParams.get("offset") ?? "0", 10) || 0, 0)
   const search = url.searchParams.get("search") ?? ""
 
   let query: string
@@ -208,7 +194,8 @@ async function handleListSenders(
   const countBinds: unknown[] = []
 
   if (search) {
-    query = "SELECT pattern, kind, created_at FROM allowed_senders WHERE pattern LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    query =
+      "SELECT pattern, kind, created_at FROM allowed_senders WHERE pattern LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ? OFFSET ?"
     countQuery = "SELECT COUNT(*) as total FROM allowed_senders WHERE pattern LIKE ? ESCAPE '\\'"
     const like = `%${search.replace(/[%_\\]/g, "\\$&")}%`
     binds.push(like, limit, offset)
@@ -220,8 +207,14 @@ async function handleListSenders(
   }
 
   const [data, count] = await Promise.all([
-    db.prepare(query).bind(...binds).all<{ pattern: string; kind: string; created_at: string }>(),
-    db.prepare(countQuery).bind(...countBinds).first<{ total: number }>(),
+    db
+      .prepare(query)
+      .bind(...binds)
+      .all<{ pattern: string; kind: string; created_at: string }>(),
+    db
+      .prepare(countQuery)
+      .bind(...countBinds)
+      .first<{ total: number }>(),
   ])
 
   return Response.json({
@@ -232,10 +225,7 @@ async function handleListSenders(
   })
 }
 
-async function handleCreateSender(
-  db: D1Database,
-  request: Request,
-): Promise<Response> {
+async function handleCreateSender(db: D1Database, request: Request): Promise<Response> {
   let body: { pattern?: string; kind?: string }
   try {
     body = await request.json()
@@ -251,18 +241,14 @@ async function handleCreateSender(
   // Auto-detect kind if not provided: /.../ → regex, otherwise exact.
   let kind = typeof body.kind === "string" ? body.kind : ""
   if (!kind) {
-    kind = pattern.startsWith("/") && pattern.endsWith("/") && pattern.length >= 2
-      ? "regex"
-      : "exact"
+    kind = pattern.startsWith("/") && pattern.endsWith("/") && pattern.length >= 2 ? "regex" : "exact"
   }
   if (kind !== "exact" && kind !== "regex") {
     return Response.json({ error: "kind must be 'exact' or 'regex'" }, { status: 400 })
   }
 
   if (kind === "regex") {
-    const re = pattern.startsWith("/") && pattern.endsWith("/")
-      ? pattern.slice(1, -1)
-      : pattern
+    const re = pattern.startsWith("/") && pattern.endsWith("/") ? pattern.slice(1, -1) : pattern
     try {
       new RegExp(re, "i")
     } catch {
@@ -271,10 +257,7 @@ async function handleCreateSender(
   }
 
   try {
-    await db
-      .prepare("INSERT INTO allowed_senders (pattern, kind) VALUES (?, ?)")
-      .bind(pattern, kind)
-      .run()
+    await db.prepare("INSERT INTO allowed_senders (pattern, kind) VALUES (?, ?)").bind(pattern, kind).run()
   } catch (err) {
     if (err instanceof Error && err.message.includes("UNIQUE")) {
       return Response.json({ error: "pattern already exists" }, { status: 409 })
@@ -285,18 +268,12 @@ async function handleCreateSender(
   return Response.json({ created: { pattern, kind } }, { status: 201 })
 }
 
-async function handleDeleteSender(
-  db: D1Database,
-  pattern: string,
-): Promise<Response> {
+async function handleDeleteSender(db: D1Database, pattern: string): Promise<Response> {
   if (!pattern) {
     return Response.json({ error: "pattern is required" }, { status: 400 })
   }
 
-  const { meta } = await db
-    .prepare("DELETE FROM allowed_senders WHERE pattern = ?")
-    .bind(pattern)
-    .run()
+  const { meta } = await db.prepare("DELETE FROM allowed_senders WHERE pattern = ?").bind(pattern).run()
 
   if (meta.changes === 0) {
     return Response.json({ error: "not found" }, { status: 404 })
@@ -306,10 +283,7 @@ async function handleDeleteSender(
 
 // --- RFC822 body extraction ---
 
-async function streamToBytes(
-  stream: ReadableStream,
-  sizeHint: number,
-): Promise<Uint8Array> {
+async function streamToBytes(stream: ReadableStream, sizeHint: number): Promise<Uint8Array> {
   const reader = stream.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
@@ -345,10 +319,7 @@ function extractBody(raw: string): { text: string | null; html: string | null } 
   return extractBodyFromParts(raw.slice(0, headerEnd), raw.slice(headerEnd + 4))
 }
 
-function extractBodyFromParts(
-  headers: string,
-  body: string,
-): { text: string | null; html: string | null } {
+function extractBodyFromParts(headers: string, body: string): { text: string | null; html: string | null } {
   const ct = findHeader(headers, "content-type") ?? "text/plain"
   const boundaryMatch = ct.match(/boundary="?([^";\s]+)"?/i)
 
@@ -363,10 +334,7 @@ function extractBodyFromParts(
   return { text: decoded, html: null }
 }
 
-function extractMultipartBody(
-  body: string,
-  boundary: string,
-): { text: string | null; html: string | null } {
+function extractMultipartBody(body: string, boundary: string): { text: string | null; html: string | null } {
   let text: string | null = null
   let html: string | null = null
   const delimiter = `--${boundary}`
@@ -435,9 +403,7 @@ function decodeTransferEncoding(body: string, encoding: string | null): string {
   if (enc === "quoted-printable") {
     return body
       .replace(/=\r?\n/g, "")
-      .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
-        String.fromCharCode(parseInt(hex, 16)),
-      )
+      .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
   }
   return body
 }
@@ -447,9 +413,7 @@ function decodeTransferEncoding(body: string, encoding: string | null): string {
 function matchesAnyPattern(from: string, patterns: Pattern[]): boolean {
   if (patterns.length === 0) return false
   const addr = extractAddress(from).toLowerCase()
-  return patterns.some((p) =>
-    p.kind === "exact" ? p.value === addr : p.re.test(addr),
-  )
+  return patterns.some((p) => (p.kind === "exact" ? p.value === addr : p.re.test(addr)))
 }
 
 function extractAddress(from: string): string {
@@ -457,10 +421,7 @@ function extractAddress(from: string): string {
   return (m ? m[1] : from).trim()
 }
 
-async function hmacSha256Hex(
-  secret: string,
-  data: Uint8Array,
-): Promise<string> {
+async function hmacSha256Hex(secret: string, data: Uint8Array): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -469,7 +430,5 @@ async function hmacSha256Hex(
     ["sign"],
   )
   const sig = await crypto.subtle.sign("HMAC", key, data)
-  return [...new Uint8Array(sig)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("")
 }

@@ -23,6 +23,12 @@ Thumbs.db
 **/node_modules
 *.log
 
+# Root workspace files — not used inside the image (the Dockerfile
+# copies opencode-config-package.json and opencode-config-bun.lock instead).
+package.json
+bun.lock
+biome.json
+
 # Cloudflare Email Worker — deployed independently with `wrangler deploy`,
 # not needed inside the runtime image.
 packages/cloudflare-email-worker

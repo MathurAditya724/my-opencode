@@ -15,10 +15,10 @@
 //
 // Events without a recognizable entity key use fire-and-forget dispatch.
 
-import type { PluginInput } from "@opencode-ai/plugin"
-import * as Sentry from "@sentry/bun"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import type { PluginInput } from "@opencode-ai/plugin"
+import * as Sentry from "@sentry/bun"
 import type { EntityKey } from "./entity"
 import type { DrainCounter, Semaphore } from "./semaphore"
 import type { LifecycleStore } from "./storage"
@@ -51,18 +51,13 @@ export type Pipeline = {
     deliveryId: string,
     matchedEvent: string,
   ): void
-  dispatchNoAffinity(
-    trigger: NormalizedTrigger,
-    prompt: string,
-    deliveryId: string,
-    matchedEvent: string,
-  ): void
+  dispatchNoAffinity(trigger: NormalizedTrigger, prompt: string, deliveryId: string, matchedEvent: string): void
 }
 
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000
 
 // Derive a per-repo session directory from an entity key's repo field.
-// e.g. "MathurAditya724/my-opencode" → ~/dev/MathurAditya724/my-opencode
+// e.g. "MathurAditya724/outpost" → ~/dev/MathurAditya724/outpost
 function repoCwd(repo: string): string {
   return join(homedir(), "dev", ...repo.split("/"))
 }
@@ -76,15 +71,7 @@ export function makePipeline(opts: {
   store: LifecycleStore
   batchWindowMs?: number
 }): Pipeline {
-  const {
-    client,
-    defaultCwd,
-    timeoutMs,
-    semaphore,
-    drainCounter,
-    store,
-    batchWindowMs = 5_000,
-  } = opts
+  const { client, defaultCwd, timeoutMs, semaphore, drainCounter, store, batchWindowMs = 5_000 } = opts
 
   const sessions = new Map<string, SessionEntry>()
 
@@ -180,7 +167,7 @@ export function makePipeline(opts: {
             "trigger.event": matchedEvent,
             "entity.key": entry.entityKey,
             "delivery.id": deliveryId,
-            "agent": trigger.agent,
+            agent: trigger.agent,
           },
         },
         async () => {
@@ -222,7 +209,7 @@ export function makePipeline(opts: {
               name: `prompt ${trigger.agent}`,
               attributes: {
                 "session.id": sessionId,
-                "agent": trigger.agent,
+                agent: trigger.agent,
                 "entity.key": entry.entityKey,
               },
             },
@@ -374,14 +361,9 @@ export function makePipeline(opts: {
     flushQueue(entry)
   }
 
-  async function followUp(
-    entry: SessionEntry,
-    events: QueuedEvent[],
-  ): Promise<void> {
+  async function followUp(entry: SessionEntry, events: QueuedEvent[]): Promise<void> {
     if (events.length === 0) return
-    const prompt = events.length === 1
-      ? events[0].prompt
-      : formatBatchPrompt(events)
+    const prompt = events.length === 1 ? events[0].prompt : formatBatchPrompt(events)
 
     clearTimeout(entry.abortTimer)
     entry.abortTimer = setTimeout(() => entry.abort.abort(), timeoutMs)
@@ -411,7 +393,7 @@ export function makePipeline(opts: {
           attributes: {
             "entity.key": entry.entityKey,
             "session.id": entry.sessionId,
-            "event_count": events.length,
+            event_count: events.length,
           },
         },
         async () => {
@@ -564,7 +546,7 @@ export function makePipeline(opts: {
             "trigger.name": trigger.name,
             "trigger.event": matchedEvent,
             "delivery.id": deliveryId,
-            "agent": trigger.agent,
+            agent: trigger.agent,
           },
         },
         async () => {
@@ -596,7 +578,7 @@ export function makePipeline(opts: {
             {
               op: "agent.prompt",
               name: `prompt ${trigger.agent}`,
-              attributes: { "session.id": sessionId, "agent": trigger.agent },
+              attributes: { "session.id": sessionId, agent: trigger.agent },
             },
             async () => {
               await client.session.prompt({
@@ -720,9 +702,7 @@ export function makePipeline(opts: {
 }
 
 function formatBatchPrompt(events: QueuedEvent[]): string {
-  const lines = [
-    `${events.length} new events arrived for this entity while you were working. Process them in order:\n`,
-  ]
+  const lines = [`${events.length} new events arrived for this entity while you were working. Process them in order:\n`]
   for (let i = 0; i < events.length; i++) {
     lines.push(`--- Event ${i + 1} of ${events.length} ---`)
     lines.push(events[i].prompt)

@@ -4,11 +4,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 
-export function verifyGithubSignature(
-  rawBody: string,
-  signatureHeader: string | null,
-  secret: string,
-): boolean {
+export function verifyGithubSignature(rawBody: string, signatureHeader: string | null, secret: string): boolean {
   return verifySha256Signature(rawBody, signatureHeader, secret)
 }
 
@@ -20,7 +16,7 @@ export function verifySha256Signature(
   if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false
   const hmac = createHmac("sha256", secret)
   hmac.update(rawBody)
-  const expected = "sha256=" + hmac.digest("hex")
+  const expected = `sha256=${hmac.digest("hex")}`
   const a = Buffer.from(signatureHeader)
   const b = Buffer.from(expected)
   if (a.length !== b.length) return false

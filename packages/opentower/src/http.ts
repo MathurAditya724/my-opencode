@@ -14,10 +14,7 @@ export const MAX_EMAIL_BODY_BYTES = 512 * 1024
 export async function readBodyBytes(
   req: Request,
   maxBytes: number = MAX_BODY_BYTES,
-): Promise<
-  | { ok: true; bytes: Uint8Array }
-  | { ok: false; response: Response }
-> {
+): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; response: Response }> {
   const declaredLength = Number(req.headers.get("content-length") ?? "0")
   if (declaredLength > maxBytes) {
     return {

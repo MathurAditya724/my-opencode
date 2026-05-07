@@ -34,11 +34,7 @@ function eventMatches(pattern: string, event: string, action: string | null): bo
   return false
 }
 
-export function findMatching(
-  triggers: NormalizedTrigger[],
-  event: string,
-  action: string | null,
-): NormalizedTrigger[] {
+export function findMatching(triggers: NormalizedTrigger[], event: string, action: string | null): NormalizedTrigger[] {
   return triggers.filter((t) => {
     if (t.enabled === false) return false
     const eventOk = t.events.some((e) => eventMatches(e, event, action))
@@ -47,10 +43,7 @@ export function findMatching(
   })
 }
 
-export function evaluateIgnoreAuthors(
-  ignoreAuthors: string[] | undefined,
-  sender: string | null,
-): string | null {
+export function evaluateIgnoreAuthors(ignoreAuthors: string[] | undefined, sender: string | null): string | null {
   if (!ignoreAuthors || ignoreAuthors.length === 0 || !sender) return null
   const lower = sender.toLowerCase()
   if (ignoreAuthors.some((a) => a.toLowerCase() === lower)) {

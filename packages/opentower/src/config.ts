@@ -21,19 +21,14 @@ export async function readWebhookConfig(): Promise<WebhookConfig> {
 }
 
 export function configPath(): string {
-  return (
-    process.env.WEBHOOKS_CONFIG ?? `${homedir()}/.config/opencode/webhooks.json`
-  )
+  return process.env.WEBHOOKS_CONFIG ?? `${homedir()}/.config/opencode/webhooks.json`
 }
 
 // Normalize a trigger's ignore_authors:
 //  - "$BOT_LOGIN" is substituted with the resolved bot login (dropped
 //    silently if unresolved).
 //  - Dedup is case-insensitive.
-export function normalizeTrigger(
-  t: Trigger,
-  botLogin: string | null,
-): NormalizedTrigger {
+export function normalizeTrigger(t: Trigger, botLogin: string | null): NormalizedTrigger {
   const merged: string[] = []
   const seen = new Set<string>()
   for (const raw of t.ignore_authors ?? []) {

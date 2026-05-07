@@ -50,6 +50,6 @@ jobs:
           platforms: linux/amd64
           push: false
           load: false
-          tags: my-opencode:ci
+          tags: outpost:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -22,10 +22,7 @@ export type EntityKey = {
 // Extract entity key from a GitHub webhook payload.
 // Returns null for email events (raw email content, no entity structure)
 // and for webhook events that don't map to a trackable entity.
-export function extractEntityKey(
-  event: string,
-  payload: unknown,
-): EntityKey | null {
+export function extractEntityKey(event: string, payload: unknown): EntityKey | null {
   // Email events carry raw email content -- no entity to extract.
   // The agent decides what to do with the email.
   if (event.startsWith("email.")) {
