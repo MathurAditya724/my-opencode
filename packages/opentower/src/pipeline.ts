@@ -62,7 +62,7 @@ export type Pipeline = {
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000
 
 // Derive a per-repo session directory from an entity key's repo field.
-// e.g. "MathurAditya724/my-opencode" → ~/dev/MathurAditya724/my-opencode
+// e.g. "MathurAditya724/outpost" → ~/dev/MathurAditya724/outpost
 function repoCwd(repo: string): string {
   return join(homedir(), "dev", ...repo.split("/"))
 }

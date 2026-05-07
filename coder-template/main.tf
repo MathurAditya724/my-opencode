@@ -44,7 +44,7 @@ data "coder_workspace_owner" "me" {}
 variable "docker_image" {
   description = "Docker image to use for the workspace"
   type        = string
-  default     = "ghcr.io/mathuraditya724/my-opencode:latest"
+  default     = "ghcr.io/mathuraditya724/outpost:latest"
 }
 
 data "coder_parameter" "gh_token" {
@@ -259,7 +259,7 @@ resource "coder_script" "opencode" {
       fi
     fi
     if ! git -C "$DEV_DIR" config --get user.email >/dev/null 2>&1; then
-      git -C "$DEV_DIR" config user.email "developer@my-opencode.local"
+      git -C "$DEV_DIR" config user.email "developer@outpost.local"
       git -C "$DEV_DIR" config user.name  "Developer"
     fi
     set -e

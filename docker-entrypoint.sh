@@ -94,7 +94,7 @@ fi
 # is currently empty so we don't stomp the gh-derived identity on
 # subsequent boots.
 if ! git -C "$DEV_DIR" config --get user.email >/dev/null 2>&1; then
-  git -C "$DEV_DIR" config user.email "developer@my-opencode.local"
+  git -C "$DEV_DIR" config user.email "developer@outpost.local"
   git -C "$DEV_DIR" config user.name  "Developer"
 fi
 
