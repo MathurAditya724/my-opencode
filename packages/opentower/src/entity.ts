@@ -119,10 +119,13 @@ async function resolveEmailEntity(payload: unknown, resolver?: EntityResolver | 
     in_reply_to: typeof o.in_reply_to === "string" ? o.in_reply_to : null,
     references: Array.isArray(o.references) ? o.references.filter((s): s is string => typeof s === "string") : [],
     list_id: typeof o.list_id === "string" ? o.list_id : null,
+    x_github_reason: typeof o.x_github_reason === "string" ? o.x_github_reason : null,
+    x_github_sender: typeof o.x_github_sender === "string" ? o.x_github_sender : null,
     body_text: typeof o.body_text === "string" ? o.body_text : null,
   })
 
-  if (!result.entity) return null
+  // Discard low-confidence guesses to avoid incorrect session affinity.
+  if (!result.entity || result.confidence === "low") return null
   return {
     key: `${result.entity.repo}#${result.entity.number}`,
     repo: result.entity.repo,
