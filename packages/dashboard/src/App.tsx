@@ -6,7 +6,6 @@ import DashboardPage from "@/pages/dashboard"
 import EntitiesPage from "@/pages/entities"
 import EntityDetailPage from "@/pages/entity-detail"
 import DispatchesPage from "@/pages/dispatches"
-import SettingsPage from "@/pages/settings"
 
 function AppRoutes() {
   const { servers } = useServers()
@@ -27,7 +26,6 @@ function AppRoutes() {
         <Route path="/entities" element={<EntitiesPage />} />
         <Route path="/entities/:key" element={<EntityDetailPage />} />
         <Route path="/dispatches" element={<DispatchesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="/setup" element={<SetupPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

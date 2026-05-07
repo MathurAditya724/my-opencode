@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useQuery } from "@/hooks/use-api"
-import { timeAgo, entityGitHubUrl } from "@/lib/format"
+import { timeAgo, entityGitHubUrl, opencodeSessionUrl } from "@/lib/format"
 import type { ApiClient, PaginatedEntities } from "@/lib/api"
-import { ExternalLink, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { ExternalLink, RefreshCw, ChevronLeft, ChevronRight, Terminal } from "lucide-react"
 
 export default function EntitiesPage() {
   const [cursor, setCursor] = useState<string | undefined>()
@@ -74,9 +74,14 @@ export default function EntitiesPage() {
                           <Badge variant="outline" className="text-xs">
                             {e.kind === "pull_request" ? "PR" : "Issue"}
                           </Badge>
-                          <a href={ghUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+                          <a href={ghUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" title="Open on GitHub">
                             <ExternalLink className="h-3 w-3" />
                           </a>
+                          {e.session_id && (
+                            <a href={opencodeSessionUrl(e.session_id)} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" title="OpenCode session">
+                              <Terminal className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
                         <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{e.repo}</span>

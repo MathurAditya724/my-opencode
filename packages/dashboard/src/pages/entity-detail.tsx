@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/status-badge"
 import { useQuery } from "@/hooks/use-api"
-import { timeAgo, formatDuration, entityGitHubUrl } from "@/lib/format"
+import { timeAgo, formatDuration, entityGitHubUrl, opencodeSessionUrl } from "@/lib/format"
 import type { ApiClient, EntityDetail } from "@/lib/api"
 import { ArrowLeft, ExternalLink, RefreshCw, Link as LinkIcon } from "lucide-react"
 
@@ -71,8 +71,16 @@ export default function EntityDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Session</dt>
-                  <dd className="text-sm font-mono truncate" title={data.entity.session_id}>
-                    {data.entity.session_id.slice(0, 8)}...
+                  <dd>
+                    <a
+                      href={opencodeSessionUrl(data.entity.session_id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-sm font-mono text-primary hover:underline"
+                      title={data.entity.session_id}
+                    >
+                      {data.entity.session_id.slice(0, 8)}... <ExternalLink className="h-3 w-3" />
+                    </a>
                   </dd>
                 </div>
                 <div>

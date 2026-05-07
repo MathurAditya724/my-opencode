@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { useQuery } from "@/hooks/use-api"
-import { timeAgo, entityGitHubUrl } from "@/lib/format"
+import { timeAgo, entityGitHubUrl, opencodeSessionUrl } from "@/lib/format"
 import type { ApiClient, StatsResult, PaginatedEntities, PaginatedDispatches } from "@/lib/api"
-import { Activity, GitPullRequest, Zap, Clock, RefreshCw, ChevronRight, ExternalLink } from "lucide-react"
+import { Activity, GitPullRequest, Zap, Clock, RefreshCw, ChevronRight, ExternalLink, Terminal } from "lucide-react"
 
 export default function DashboardPage() {
   const [dispatchFilter, setDispatchFilter] = useState<string>("")
@@ -86,9 +86,14 @@ export default function DashboardPage() {
                         <Link to={`/entities/${encodeURIComponent(e.entity_key)}`} className="font-mono text-sm font-medium hover:underline">
                           {e.entity_key}
                         </Link>
-                        <a href={entityGitHubUrl(e)} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+                        <a href={entityGitHubUrl(e)} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" title="Open on GitHub">
                           <ExternalLink className="h-3 w-3" />
                         </a>
+                        {e.session_id && (
+                          <a href={opencodeSessionUrl(e.session_id)} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" title="OpenCode session">
+                            <Terminal className="h-3 w-3" />
+                          </a>
+                        )}
                       </div>
                       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                         <Badge variant="outline" className="text-xs">{e.kind === "pull_request" ? "PR" : "Issue"}</Badge>

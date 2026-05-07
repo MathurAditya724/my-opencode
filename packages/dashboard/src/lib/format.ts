@@ -22,3 +22,7 @@ export function entityGitHubUrl(entity: { repo: string; number: number; kind: st
   const type = entity.kind === "pull_request" ? "pull" : "issues"
   return `https://github.com/${entity.repo}/${type}/${entity.number}`
 }
+
+export function opencodeSessionUrl(sessionId: string): string {
+  return `https://opencode.ai/sessions/${sessionId}`
+}

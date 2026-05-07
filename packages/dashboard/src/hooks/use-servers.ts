@@ -65,6 +65,17 @@ export function useServers() {
     [],
   )
 
+  const update = useCallback(
+    (id: string, patch: Partial<Omit<ServerConfig, "id">>) => {
+      const all = loadServers().map((s) =>
+        s.id === id ? { ...s, ...patch } : s,
+      )
+      saveServers(all)
+      emitChange()
+    },
+    [],
+  )
+
   const remove = useCallback(
     (id: string) => {
       const all = loadServers().filter((s) => s.id !== id)
@@ -77,5 +88,5 @@ export function useServers() {
     [],
   )
 
-  return { servers, activeServer, activeId, setActiveId, add, remove }
+  return { servers, activeServer, activeId, setActiveId, add, update, remove }
 }

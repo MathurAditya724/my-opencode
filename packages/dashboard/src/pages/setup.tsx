@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useServers } from "@/hooks/use-servers"
 import { ApiClient } from "@/lib/api"
-import { Radio, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 export default function SetupPage() {
   const { add } = useServers()
@@ -65,11 +65,11 @@ export default function SetupPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Radio className="h-6 w-6 text-primary" />
+            <span className="text-2xl" role="img" aria-label="outpost">🏕️</span>
           </div>
-          <CardTitle className="text-2xl">OpenTower Dashboard</CardTitle>
+          <CardTitle className="text-2xl">Outpost Dashboard</CardTitle>
           <CardDescription>
-            Connect to an OpenTower server to view events, dispatches, and sessions.
+            Connect to an Outpost server to view events, dispatches, and sessions.
           </CardDescription>
         </CardHeader>
         <CardContent>
