@@ -1,4 +1,7 @@
 #!/bin/sh
+# Abort on unhandled errors only for critical setup (volume, git init).
+# The gh/git identity block is fail-soft — errors there must not prevent
+# the container from reaching exec "$@" (which starts the Coder agent).
 set -e
 
 DEV_DIR="${HOME:-/home/developer}/dev"
@@ -28,6 +31,14 @@ mkdir -p "$DEV_DIR/.opencode"
 if [ ! -d "$DEV_DIR/.git" ]; then
   git init -q "$DEV_DIR"
 fi
+
+# --- Identity setup (fail-soft) -------------------------------------------
+# Everything below is best-effort: gh/git identity configuration must never
+# prevent the container from starting. Disable set -e for this section so
+# unexpected failures (e.g. gh internally calling git in a non-repo cwd,
+# network errors reaching api.github.com, jq parse failures) are logged as
+# warnings instead of crashing the container into a restart loop.
+set +e
 
 # If GH_TOKEN is set, configure git's credential helper to defer to
 # `gh auth git-credential`. Without this, `git push` over HTTPS prompts
@@ -86,6 +97,10 @@ if ! git -C "$DEV_DIR" config --get user.email >/dev/null 2>&1; then
   git -C "$DEV_DIR" config user.email "developer@my-opencode.local"
   git -C "$DEV_DIR" config user.name  "Developer"
 fi
+
+# --- End identity setup ---------------------------------------------------
+# Re-enable strict errors for the final exec.
+set -e
 
 # Pin cwd to ~/dev — Railway can start the container from / regardless
 # of the Dockerfile's WORKDIR.
