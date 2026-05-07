@@ -36,13 +36,13 @@ jobs:
         run: |
           tmp=$(mktemp -d)
           cp opencode-config-package.json "$tmp/package.json"
-          mkdir -p "$tmp/packages"
-          cp -r packages/opentower "$tmp/packages/opentower"
+          mkdir -p "$tmp/packages/opentower"
+          cp packages/opentower/package.json "$tmp/packages/opentower/package.json"
           cd "$tmp"
           bun install --save-text-lockfile
           cd "$GITHUB_WORKSPACE"
           if ! diff -u opencode-config-bun.lock "$tmp/bun.lock"; then
-            echo "::error::opencode-config-bun.lock is out of date. Run: mkdir -p /tmp/oc && cp opencode-config-package.json /tmp/oc/package.json && mkdir -p /tmp/oc/packages && cp -r packages/opentower /tmp/oc/packages/opentower && cd /tmp/oc && bun install --save-text-lockfile && cp bun.lock \$OLDPWD/opencode-config-bun.lock"
+            echo "::error::opencode-config-bun.lock is out of date. Run: mkdir -p /tmp/oc/packages/opentower && cp opencode-config-package.json /tmp/oc/package.json && cp packages/opentower/package.json /tmp/oc/packages/opentower/package.json && cd /tmp/oc && bun install --save-text-lockfile && cp bun.lock \$OLDPWD/opencode-config-bun.lock"
             exit 1
           fi
 
