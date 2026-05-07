@@ -54,6 +54,15 @@ export function createApp(opts: {
 
   const app = new Hono<AppEnv>()
 
+  // CORS — allows the dashboard SPA (e.g. localhost:5173) to reach
+  // all routes including /healthz and /api/*.
+  app.use("*", cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Authorization", "Content-Type"],
+    maxAge: 86400,
+  }))
+
   app.onError((err, c) => {
     Sentry.captureException(err)
     console.error("[opentower] unhandled route error:", err)
@@ -116,13 +125,6 @@ export function createApp(opts: {
   app.post("/webhooks/email", emailWebhookHandler)
 
   // --- Dashboard JSON API ---
-
-  app.use("/api/*", cors({
-    origin: "*",
-    allowMethods: ["GET", "OPTIONS"],
-    allowHeaders: ["Authorization", "Content-Type"],
-    maxAge: 86400,
-  }))
 
   app.use("/api/*", async (c, next) => {
     if (!opts.apiToken) {
