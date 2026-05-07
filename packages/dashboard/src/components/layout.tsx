@@ -487,9 +487,7 @@ function ThemeToggle({ collapsed }: { collapsed: boolean }) {
           onClick={() => setTheme(value)}
           className={cn(
             "flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs",
-            theme === value
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground",
+            theme === value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
           )}
           title={label}
         >

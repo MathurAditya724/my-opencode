@@ -24,12 +24,12 @@ export default function EntitiesPage() {
     setCursors([""])
   }, [serverUrl])
 
-	const { data, isLoading, isFetching, error, refetch } = useQuery<PaginatedEntities>({
-		queryKey: ["entities", client?.baseUrl, cursors[page]],
-		queryFn: () => client!.entities({ limit: 25, cursor: cursors[page] || undefined }),
-		enabled: !!client,
-		placeholderData: keepPreviousData,
-	})
+  const { data, isLoading, isFetching, error, refetch } = useQuery<PaginatedEntities>({
+    queryKey: ["entities", client?.baseUrl, cursors[page]],
+    queryFn: () => client!.entities({ limit: 25, cursor: cursors[page] || undefined }),
+    enabled: !!client,
+    placeholderData: keepPreviousData,
+  })
 
   function nextPage() {
     if (data?.next_cursor) {
@@ -51,9 +51,9 @@ export default function EntitiesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Entities</h1>
-			<Button variant="ghost" size="icon" onClick={() => refetch()}>
-					<RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-				</Button>
+        <Button variant="ghost" size="icon" onClick={() => refetch()}>
+          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+        </Button>
       </div>
 
       <Card>
