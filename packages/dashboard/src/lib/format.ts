@@ -24,16 +24,33 @@ export function entityGitHubUrl(entity: { repo: string; number: number; kind: st
 }
 
 /**
+ * Base64url-encode without padding, matching the OpenCode SPA's
+ * `base64Encode` from `@opencode-ai/core/util/encode`.
+ * Handles UTF-8 correctly via TextEncoder.
+ */
+function base64UrlEncode(value: string): string {
+  const bytes = new TextEncoder().encode(value)
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("")
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+
+/**
  * Return the best available URL for viewing an OpenCode session.
  * Prefers the public share URL (from auto-share) when available.
- * Falls back to constructing a URL from opencodeUrl + sessionId,
- * or a relative path as a last resort.
+ * Falls back to constructing a URL that matches the OpenCode web UI
+ * route structure: /{base64url(directory)}/session/{sessionId}.
+ * Returns null when both shareUrl and directory are missing.
  */
-export function opencodeSessionUrl(sessionId: string, shareUrl?: string | null, opencodeUrl?: string): string {
+export function opencodeSessionUrl(
+  sessionId: string,
+  shareUrl: string | null | undefined,
+  directory: string | null | undefined,
+  opencodeUrl?: string,
+): string | null {
   if (shareUrl) return shareUrl
+  if (!directory) return null
+  const dir = base64UrlEncode(directory)
   const base = opencodeUrl?.replace(/\/+$/, "")
-  if (base) {
-    return `${base}/sessions/${encodeURIComponent(sessionId)}`
-  }
-  return `/sessions/${encodeURIComponent(sessionId)}`
+  const path = `/${dir}/session/${encodeURIComponent(sessionId)}`
+  return base ? `${base}${path}` : path
 }

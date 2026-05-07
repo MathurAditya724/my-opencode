@@ -98,17 +98,22 @@ export default function EntitiesPage() {
                           >
                             <ExternalLink className="h-3 w-3" />
                           </a>
-                          {e.session_id?.trim() && (
-                            <a
-                              href={opencodeSessionUrl(e.session_id, e.share_url, opencodeUrl)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-muted-foreground hover:text-foreground"
-                              title="OpenCode session"
-                            >
-                              <Terminal className="h-3 w-3" />
-                            </a>
-                          )}
+                          {(() => {
+                            const url = e.session_id?.trim()
+                              ? opencodeSessionUrl(e.session_id, e.share_url, e.cwd, opencodeUrl)
+                              : null
+                            return url ? (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-muted-foreground hover:text-foreground"
+                                title="OpenCode session"
+                              >
+                                <Terminal className="h-3 w-3" />
+                              </a>
+                            ) : null
+                          })()}
                         </div>
                         <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{e.repo}</span>

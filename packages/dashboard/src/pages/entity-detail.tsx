@@ -75,21 +75,26 @@ export default function EntityDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Session</dt>
-                  {data.entity.session_id?.trim() ? (
-                    <dd>
-                      <a
-                        href={opencodeSessionUrl(data.entity.session_id, data.entity.share_url, opencodeUrl)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 font-mono text-sm text-primary hover:underline"
-                        title={data.entity.session_id}
-                      >
-                        {data.entity.session_id.slice(0, 8)}... <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </dd>
-                  ) : (
-                    <dd className="text-sm text-muted-foreground">N/A</dd>
-                  )}
+                  {(() => {
+                    const url = data.entity.session_id?.trim()
+                      ? opencodeSessionUrl(data.entity.session_id, data.entity.share_url, data.entity.cwd, opencodeUrl)
+                      : null
+                    return url ? (
+                      <dd>
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-sm text-primary hover:underline"
+                          title={data.entity.session_id}
+                        >
+                          {data.entity.session_id.slice(0, 8)}... <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </dd>
+                    ) : (
+                      <dd className="text-sm text-muted-foreground">N/A</dd>
+                    )
+                  })()}
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Created</dt>
@@ -165,18 +170,23 @@ export default function EntityDetailPage() {
                           <span className="font-mono text-sm">{d.trigger_name}</span>
                           <StatusBadge status={d.status} />
                           <span className="text-xs text-muted-foreground">{d.event}</span>
-                          {d.session_id?.trim() && (
-                            <a
-                              href={opencodeSessionUrl(d.session_id, d.share_url, opencodeUrl)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                              title="OpenCode session"
-                            >
-                              <Terminal className="h-3 w-3" />
-                              session
-                            </a>
-                          )}
+                          {(() => {
+                            const url = d.session_id?.trim()
+                              ? opencodeSessionUrl(d.session_id, d.share_url, d.cwd, opencodeUrl)
+                              : null
+                            return url ? (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                title="OpenCode session"
+                              >
+                                <Terminal className="h-3 w-3" />
+                                session
+                              </a>
+                            ) : null
+                          })()}
                         </div>
                         <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{timeAgo(d.created_at)}</span>

@@ -35,6 +35,7 @@ type SessionEntry = {
   sessionId: string
   entityKey: string
   agent: string
+  cwd: string
   busy: boolean
   queue: QueuedEvent[]
   abort: AbortController
@@ -101,7 +102,13 @@ export function makePipeline(opts: {
   }
 
   // Persist entity→session mapping and issue→PR links to SQLite.
-  function persistEntity(entityKey: EntityKey, sessionId: string, agent: string, shareUrl?: string | null): void {
+  function persistEntity(
+    entityKey: EntityKey,
+    sessionId: string,
+    agent: string,
+    cwd: string | null,
+    shareUrl?: string | null,
+  ): void {
     store.upsertEntity({
       entity_key: entityKey.key,
       repo: entityKey.repo,
@@ -109,6 +116,7 @@ export function makePipeline(opts: {
       kind: entityKey.kind,
       session_id: sessionId,
       share_url: shareUrl ?? null,
+      cwd,
       agent,
     })
 
@@ -141,11 +149,13 @@ export function makePipeline(opts: {
     matchedEvent: string,
   ): Promise<void> {
     drainCounter.start()
+    const cwd = sessionCwd(trigger, entityKey)
     const dispatchId = crypto.randomUUID()
     store.insertDispatch({
       id: dispatchId,
       entity_key: entityKey.key,
       session_id: null,
+      cwd,
       trigger_name: trigger.name,
       event: matchedEvent,
       delivery_id: deliveryId,
@@ -172,7 +182,6 @@ export function makePipeline(opts: {
           },
         },
         async () => {
-          const cwd = sessionCwd(trigger, entityKey)
           const session = await client.session.create({
             body: { title: `[webhook/${trigger.name}] ${entry.entityKey}` },
             query: { directory: cwd },
@@ -194,7 +203,7 @@ export function makePipeline(opts: {
           entry.sessionId = sessionId
           const shareUrl = session.data?.share?.url ?? null
 
-          persistEntity(entityKey, sessionId, trigger.agent, shareUrl)
+          persistEntity(entityKey, sessionId, trigger.agent, cwd, shareUrl)
           store.updateDispatchSession(dispatchId, sessionId, shareUrl)
 
           Sentry.logger.info("dispatch.started", {
@@ -260,11 +269,13 @@ export function makePipeline(opts: {
     matchedEvent: string,
   ): Promise<void> {
     drainCounter.start()
+    const cwd = sessionCwd(trigger, entityKey)
     const dispatchId = crypto.randomUUID()
     store.insertDispatch({
       id: dispatchId,
       entity_key: entityKey.key,
       session_id: entry.sessionId,
+      cwd,
       trigger_name: trigger.name,
       event: matchedEvent,
       delivery_id: deliveryId,
@@ -273,7 +284,7 @@ export function makePipeline(opts: {
 
     // Also persist this entity if it's new (e.g. PR arriving for a
     // session that was originally created for the issue).
-    persistEntity(entityKey, entry.sessionId, trigger.agent)
+    persistEntity(entityKey, entry.sessionId, trigger.agent, cwd)
 
     await semaphore.acquire()
     // Start the abort timer after acquiring the semaphore so time
@@ -343,6 +354,7 @@ export function makePipeline(opts: {
           sessionId: "",
           entityKey: entityKey.key,
           agent: trigger.agent,
+          cwd: sessionCwd(trigger, entityKey),
           busy: true,
           queue: entry.queue,
           abort: newAbort,
@@ -378,6 +390,7 @@ export function makePipeline(opts: {
         id,
         entity_key: entry.entityKey,
         session_id: entry.sessionId,
+        cwd: entry.cwd,
         trigger_name: ev.trigger.name,
         event: ev.matchedEvent,
         delivery_id: ev.deliveryId,
@@ -525,11 +538,13 @@ export function makePipeline(opts: {
     matchedEvent: string,
   ): Promise<void> {
     drainCounter.start()
+    const cwd = trigger.cwd ?? defaultCwd
     const dispatchId = crypto.randomUUID()
     store.insertDispatch({
       id: dispatchId,
       entity_key: null,
       session_id: null,
+      cwd,
       trigger_name: trigger.name,
       event: matchedEvent,
       delivery_id: deliveryId,
@@ -663,6 +678,7 @@ export function makePipeline(opts: {
           sessionId: persisted.session_id,
           entityKey: entityKey.key,
           agent: persisted.agent,
+          cwd: persisted.cwd ?? sessionCwd(trigger, entityKey),
           busy: true,
           queue: [],
           abort,
@@ -690,6 +706,7 @@ export function makePipeline(opts: {
         sessionId: "",
         entityKey: entityKey.key,
         agent: trigger.agent,
+        cwd: sessionCwd(trigger, entityKey),
         busy: true,
         queue: [],
         abort,

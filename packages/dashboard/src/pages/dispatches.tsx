@@ -119,18 +119,22 @@ export default function DispatchesPage() {
                           {d.entity_key}
                         </Link>
                       )}
-                      {d.session_id?.trim() && (
-                        <a
-                          href={opencodeSessionUrl(d.session_id, d.share_url, opencodeUrl)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 font-mono text-primary hover:underline"
-                          title="OpenCode session"
-                        >
-                          <Terminal className="h-3 w-3" />
-                          {d.session_id.slice(0, 8)}
-                        </a>
-                      )}
+                      {(() => {
+                        const sid = d.session_id?.trim()
+                        const url = sid ? opencodeSessionUrl(sid, d.share_url, d.cwd, opencodeUrl) : null
+                        return url && sid ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 font-mono text-primary hover:underline"
+                            title="OpenCode session"
+                          >
+                            <Terminal className="h-3 w-3" />
+                            {sid.slice(0, 8)}
+                          </a>
+                        ) : null
+                      })()}
                       <span>Duration: {formatDuration(d.created_at, d.completed_at)}</span>
                       <span className="font-mono" title={d.id}>
                         {d.id.slice(0, 8)}
