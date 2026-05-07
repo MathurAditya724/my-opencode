@@ -17,7 +17,7 @@ export default function EntityDetailPage() {
   const opencodeUrl = useOpencodeUrl()
   const decodedKey = decodeURIComponent(key ?? "")
 
-	const { data, isLoading, isFetching, error, refetch } = useQuery<EntityDetail>({
+  const { data, isLoading, isFetching, error, refetch } = useQuery<EntityDetail>({
     queryKey: ["entity", client?.baseUrl, decodedKey],
     queryFn: () => client!.entity(decodedKey),
     enabled: !!client && !!decodedKey,
@@ -37,9 +37,9 @@ export default function EntityDetailPage() {
         <div className="flex-1">
           <h1 className="font-mono text-xl font-bold">{decodedKey}</h1>
         </div>
-			<Button variant="ghost" size="icon" onClick={() => refetch()}>
-					<RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-				</Button>
+        <Button variant="ghost" size="icon" onClick={() => refetch()}>
+          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+        </Button>
       </div>
 
       {isLoading && !data ? (

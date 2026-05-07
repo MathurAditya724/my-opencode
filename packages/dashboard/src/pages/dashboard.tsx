@@ -47,24 +47,24 @@ export default function DashboardPage() {
     enabled: !!client,
   })
 
-	const entities = useQuery<PaginatedEntities>({
-		queryKey: ["dashboard-entities", client?.baseUrl, entityCursors[entityPage]],
-		queryFn: () => client!.entities({ limit: 10, cursor: entityCursors[entityPage] || undefined }),
-		enabled: !!client,
-		placeholderData: keepPreviousData,
-	})
+  const entities = useQuery<PaginatedEntities>({
+    queryKey: ["dashboard-entities", client?.baseUrl, entityCursors[entityPage]],
+    queryFn: () => client!.entities({ limit: 10, cursor: entityCursors[entityPage] || undefined }),
+    enabled: !!client,
+    placeholderData: keepPreviousData,
+  })
 
-	const dispatches = useQuery<PaginatedDispatches>({
-		queryKey: ["dashboard-dispatches", client?.baseUrl, dispatchFilter, dispatchCursors[dispatchPage]],
-		queryFn: () =>
-			client!.dispatches({
-				limit: 10,
-				status: dispatchFilter || undefined,
-				cursor: dispatchCursors[dispatchPage] || undefined,
-			}),
-		enabled: !!client,
-		placeholderData: keepPreviousData,
-	})
+  const dispatches = useQuery<PaginatedDispatches>({
+    queryKey: ["dashboard-dispatches", client?.baseUrl, dispatchFilter, dispatchCursors[dispatchPage]],
+    queryFn: () =>
+      client!.dispatches({
+        limit: 10,
+        status: dispatchFilter || undefined,
+        cursor: dispatchCursors[dispatchPage] || undefined,
+      }),
+    enabled: !!client,
+    placeholderData: keepPreviousData,
+  })
 
   function entityNextPage() {
     if (entities.data?.next_cursor) {
@@ -144,9 +144,9 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Recent Entities</CardTitle>
             <div className="flex gap-2">
-							<Button variant="ghost" size="icon" onClick={() => entities.refetch()}>
-								<RefreshCw className={cn("h-4 w-4", entities.isFetching && "animate-spin")} />
-							</Button>
+              <Button variant="ghost" size="icon" onClick={() => entities.refetch()}>
+                <RefreshCw className={cn("h-4 w-4", entities.isFetching && "animate-spin")} />
+              </Button>
               <Link to="/entities">
                 <Button variant="ghost" size="sm">
                   View all <ChevronRight className="h-4 w-4" />
@@ -227,9 +227,9 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Recent Dispatches</CardTitle>
             <div className="flex gap-2">
-							<Button variant="ghost" size="icon" onClick={() => dispatches.refetch()}>
-								<RefreshCw className={cn("h-4 w-4", dispatches.isFetching && "animate-spin")} />
-							</Button>
+              <Button variant="ghost" size="icon" onClick={() => dispatches.refetch()}>
+                <RefreshCw className={cn("h-4 w-4", dispatches.isFetching && "animate-spin")} />
+              </Button>
               <Link to="/dispatches">
                 <Button variant="ghost" size="sm">
                   View all <ChevronRight className="h-4 w-4" />

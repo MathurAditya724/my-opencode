@@ -26,17 +26,17 @@ export default function DispatchesPage() {
     setStatusFilter("")
   }, [serverUrl])
 
-	const { data, isLoading, isFetching, error, refetch } = useQuery<PaginatedDispatches>({
-		queryKey: ["dispatches", client?.baseUrl, statusFilter, cursors[page]],
-		queryFn: () =>
-			client!.dispatches({
-				limit: 30,
-				cursor: cursors[page] || undefined,
-				status: statusFilter || undefined,
-			}),
-		enabled: !!client,
-		placeholderData: keepPreviousData,
-	})
+  const { data, isLoading, isFetching, error, refetch } = useQuery<PaginatedDispatches>({
+    queryKey: ["dispatches", client?.baseUrl, statusFilter, cursors[page]],
+    queryFn: () =>
+      client!.dispatches({
+        limit: 30,
+        cursor: cursors[page] || undefined,
+        status: statusFilter || undefined,
+      }),
+    enabled: !!client,
+    placeholderData: keepPreviousData,
+  })
 
   function nextPage() {
     if (data?.next_cursor) {
@@ -64,9 +64,9 @@ export default function DispatchesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Dispatches</h1>
-			<Button variant="ghost" size="icon" onClick={() => refetch()}>
-					<RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-				</Button>
+        <Button variant="ghost" size="icon" onClick={() => refetch()}>
+          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+        </Button>
       </div>
 
       <div className="flex gap-1">

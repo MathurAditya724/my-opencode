@@ -48,7 +48,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "group/sidebar relative sticky top-0 flex h-screen flex-col border-r bg-card transition-[width] duration-200",
+          "group/sidebar relative sticky top-0 flex h-screen flex-col bg-card transition-[width] duration-200",
           collapsed ? "w-14" : "w-64",
         )}
       >
@@ -238,7 +238,7 @@ export default function Layout() {
             setCollapsed(!collapsed)
           }}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="absolute inset-y-0 -right-2 z-20 w-4 cursor-col-resize opacity-0 transition-opacity focus-visible:opacity-100 group-hover/sidebar:opacity-100 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:rounded-full after:bg-transparent after:transition-colors hover:after:bg-primary focus-visible:after:bg-primary"
+          className="absolute inset-y-0 -right-2 z-20 w-4 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border after:transition-colors hover:after:w-[2px] hover:after:bg-primary focus-visible:after:w-[2px] focus-visible:after:bg-primary"
         />
       </aside>
 
@@ -487,9 +487,7 @@ function ThemeToggle({ collapsed }: { collapsed: boolean }) {
           onClick={() => setTheme(value)}
           className={cn(
             "flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs",
-            theme === value
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground",
+            theme === value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
           )}
           title={label}
         >
