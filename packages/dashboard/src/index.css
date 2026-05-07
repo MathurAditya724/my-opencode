@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Theme derived from Sentry's design tokens.
+ * Sentry uses a purple-tinted neutral palette with "blurple" (#7553FF) accent.
+ * Source: getsentry/sentry static/app/utils/theme/scraps/tokens/color.tsx
+ */
+
+@theme {
+  /* Light theme (Sentry light) */
+  --color-background: #ffffff;
+  --color-foreground: #302e36;
+  --color-card: #ffffff;
+  --color-card-foreground: #302e36;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #302e36;
+  --color-primary: #7553ff;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f0f0f2;
+  --color-secondary-foreground: #302e36;
+  --color-muted: #f8f8f9;
+  --color-muted-foreground: #6a6772;
+  --color-accent: #f0f0f2;
+  --color-accent-foreground: #302e36;
+  --color-destructive: #f55459;
+  --color-destructive-foreground: #d12a30;
+  --color-border: #e6e6e9;
+  --color-input: #dad9de;
+  --color-ring: #7553ff;
+  --radius: 0.5rem;
+
+  --color-chart-1: #7553ff;
+  --color-chart-2: #e45bc1;
+  --color-chart-3: #f58159;
+  --color-chart-4: #f5c342;
+  --color-chart-5: #26b085;
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+.dark {
+  /* Dark theme (Sentry dark) */
+  --color-background: #1b1821;
+  --color-foreground: #e7e5ea;
+  --color-card: #24202b;
+  --color-card-foreground: #e7e5ea;
+  --color-popover: #24202b;
+  --color-popover-foreground: #e7e5ea;
+  --color-primary: #7553ff;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #2e2936;
+  --color-secondary-foreground: #e7e5ea;
+  --color-muted: #2e2936;
+  --color-muted-foreground: #a49eae;
+  --color-accent: #393442;
+  --color-accent-foreground: #e7e5ea;
+  --color-destructive: #f55459;
+  --color-destructive-foreground: #f87c7f;
+  --color-border: #393442;
+  --color-input: #393442;
+  --color-ring: #7553ff;
+
+  --color-chart-1: #7c83ff;
+  --color-chart-2: #e76dbe;
+  --color-chart-3: #f5915f;
+  --color-chart-4: #f5c342;
+  --color-chart-5: #2cc590;
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+  html {
+    color: var(--color-foreground);
+    background-color: var(--color-background);
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
