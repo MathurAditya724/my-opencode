@@ -2,20 +2,25 @@ import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useQuery } from "@/hooks/use-api"
-import type { ApiClient, EntityDetail } from "@/lib/api"
+import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
+import type { EntityDetail } from "@/lib/api"
 import { entityGitHubUrl, formatDuration, opencodeSessionUrl, timeAgo } from "@/lib/format"
-import { ArrowLeft, ExternalLink, Link as LinkIcon, RefreshCw } from "lucide-react"
-import { useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { ArrowLeft, ExternalLink, Link as LinkIcon, RefreshCw, Terminal } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
 export default function EntityDetailPage() {
   const { key } = useParams<{ key: string }>()
   const navigate = useNavigate()
+  const client = useApiClient()
+  const opencodeUrl = useOpencodeUrl()
   const decodedKey = decodeURIComponent(key ?? "")
 
-  const fetcher = useMemo(() => (decodedKey ? (c: ApiClient) => c.entity(decodedKey) : null), [decodedKey])
-  const { data, loading, error, refetch } = useQuery<EntityDetail>(fetcher)
+  const { data, isLoading, error, refetch } = useQuery<EntityDetail>({
+    queryKey: ["entity", client?.baseUrl, decodedKey],
+    queryFn: () => client!.entity(decodedKey),
+    enabled: !!client && !!decodedKey,
+  })
 
   if (!decodedKey) return <p>Invalid entity key</p>
 
@@ -28,21 +33,21 @@ export default function EntityDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold font-mono">{decodedKey}</h1>
+          <h1 className="font-mono text-xl font-bold">{decodedKey}</h1>
         </div>
-        <Button variant="ghost" size="icon" onClick={refetch}>
+        <Button variant="ghost" size="icon" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
 
-      {loading && !data ? (
+      {isLoading && !data ? (
         <div className="space-y-4">
           <div className="h-32 animate-pulse rounded-xl bg-muted" />
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
         </div>
       ) : error ? (
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive-foreground">
-          {error}
+          {error.message}
         </div>
       ) : data ? (
         <>
@@ -60,7 +65,7 @@ export default function EntityDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Repository</dt>
-                  <dd className="text-sm font-mono">{data.entity.repo}</dd>
+                  <dd className="font-mono text-sm">{data.entity.repo}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Agent</dt>
@@ -71,10 +76,10 @@ export default function EntityDetailPage() {
                   {data.entity.session_id?.trim() ? (
                     <dd>
                       <a
-                        href={opencodeSessionUrl(data.entity.session_id)}
+                        href={opencodeSessionUrl(data.entity.session_id, opencodeUrl)}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm font-mono text-primary hover:underline"
+                        className="inline-flex items-center gap-1 font-mono text-sm text-primary hover:underline"
                         title={data.entity.session_id}
                       >
                         {data.entity.session_id.slice(0, 8)}... <ExternalLink className="h-3 w-3" />
@@ -150,14 +155,26 @@ export default function EntityDetailPage() {
                   {data.dispatches.map((d, i) => (
                     <div key={d.id} className="relative flex gap-4 pb-6">
                       {i < data.dispatches.length - 1 && (
-                        <div className="absolute left-[11px] top-6 bottom-0 w-px bg-border" />
+                        <div className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
                       )}
                       <div className="relative z-10 mt-1.5 h-[9px] w-[9px] shrink-0 rounded-full border-2 border-border bg-background" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-mono text-sm">{d.trigger_name}</span>
                           <StatusBadge status={d.status} />
                           <span className="text-xs text-muted-foreground">{d.event}</span>
+                          {d.session_id?.trim() && (
+                            <a
+                              href={opencodeSessionUrl(d.session_id, opencodeUrl)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              title="OpenCode session"
+                            >
+                              <Terminal className="h-3 w-3" />
+                              session
+                            </a>
+                          )}
                         </div>
                         <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{timeAgo(d.created_at)}</span>

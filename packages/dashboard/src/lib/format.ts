@@ -23,7 +23,14 @@ export function entityGitHubUrl(entity: { repo: string; number: number; kind: st
   return `https://github.com/${entity.repo}/${type}/${entity.number}`
 }
 
-/** Construct a link to the opencode session viewer at opencode.ai */
-export function opencodeSessionUrl(sessionId: string): string {
-  return `https://opencode.ai/sessions/${encodeURIComponent(sessionId)}`
+/**
+ * Build a session URL relative to the configured OpenCode instance.
+ * Falls back to a relative path on the current origin when no opencodeUrl is set.
+ */
+export function opencodeSessionUrl(sessionId: string, opencodeUrl?: string): string {
+  const base = opencodeUrl?.replace(/\/+$/, "")
+  if (base) {
+    return `${base}/sessions/${encodeURIComponent(sessionId)}`
+  }
+  return `/sessions/${encodeURIComponent(sessionId)}`
 }

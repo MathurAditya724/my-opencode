@@ -1,20 +1,7 @@
 import { useServers } from "@/hooks/use-servers"
 import { ApiClient } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import {
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  GitPullRequest,
-  LayoutDashboard,
-  Loader2,
-  Pencil,
-  Plus,
-  Server,
-  Trash2,
-  X,
-  Zap,
-} from "lucide-react"
+import { Check, GitPullRequest, LayoutDashboard, Loader2, Pencil, Plus, Server, Trash2, X, Zap } from "lucide-react"
 import { useState } from "react"
 import { Link, NavLink, Outlet } from "react-router-dom"
 
@@ -43,7 +30,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "sticky top-0 flex h-screen flex-col border-r bg-card transition-[width] duration-200",
+          "group/sidebar relative sticky top-0 flex h-screen flex-col border-r bg-card transition-[width] duration-200",
           collapsed ? "w-14" : "w-64",
         )}
       >
@@ -55,19 +42,6 @@ export default function Layout() {
             </span>
             {!collapsed && <span>Outpost</span>}
           </Link>
-          <button
-            type="button"
-            onClick={() => {
-              if (!collapsed) {
-                setEditingId(null)
-                setAdding(false)
-              }
-              setCollapsed(!collapsed)
-            }}
-            className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          >
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </button>
         </div>
 
         {/* Navigation */}
@@ -191,7 +165,7 @@ export default function Layout() {
                         </span>
                         <span className="truncate text-xs text-muted-foreground">{safeHostname(s.url)}</span>
                       </button>
-                      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                         <button
                           type="button"
                           onClick={() => {
@@ -227,6 +201,22 @@ export default function Layout() {
             )}
           </div>
         </div>
+
+        {/* Sidebar rail toggle — inspired by shadcn SidebarRail */}
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => {
+            if (!collapsed) {
+              setEditingId(null)
+              setAdding(false)
+            }
+            setCollapsed(!collapsed)
+          }}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="absolute inset-y-0 -right-2 z-20 w-4 cursor-col-resize opacity-0 transition-opacity focus-visible:opacity-100 group-hover/sidebar:opacity-100 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:rounded-full after:bg-transparent after:transition-colors hover:after:bg-primary focus-visible:after:bg-primary"
+        />
       </aside>
 
       {/* Main content */}
@@ -243,12 +233,13 @@ function AddServerForm({
   onAdd,
   onCancel,
 }: {
-  onAdd: (cfg: { name: string; url: string; token: string }) => void
+  onAdd: (cfg: { name: string; url: string; token: string; opencodeUrl?: string }) => void
   onCancel: () => void
 }) {
   const [name, setName] = useState("")
   const [url, setUrl] = useState("")
   const [token, setToken] = useState("")
+  const [opencodeUrl, setOpencodeUrl] = useState("")
   const [error, setError] = useState("")
   const [testing, setTesting] = useState(false)
 
@@ -267,6 +258,15 @@ function AddServerForm({
       setError("Invalid URL")
       return
     }
+    const trimmedOpencodeUrl = opencodeUrl.replace(/\/+$/, "")
+    if (trimmedOpencodeUrl) {
+      try {
+        new URL(trimmedOpencodeUrl)
+      } catch {
+        setError("Invalid OpenCode URL")
+        return
+      }
+    }
     setTesting(true)
     try {
       const client = new ApiClient(trimmedUrl, token)
@@ -282,7 +282,12 @@ function AddServerForm({
     } finally {
       setTesting(false)
     }
-    onAdd({ name: name || hostname, url: trimmedUrl, token })
+    onAdd({
+      name: name || hostname,
+      url: trimmedUrl,
+      token,
+      opencodeUrl: trimmedOpencodeUrl || undefined,
+    })
   }
 
   return (
@@ -295,7 +300,7 @@ function AddServerForm({
       />
       <input
         className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-        placeholder="https://..."
+        placeholder="https://opentower.example.com"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         required
@@ -307,6 +312,12 @@ function AddServerForm({
         value={token}
         onChange={(e) => setToken(e.target.value)}
         required
+      />
+      <input
+        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        placeholder="OpenCode URL (optional)"
+        value={opencodeUrl}
+        onChange={(e) => setOpencodeUrl(e.target.value)}
       />
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-1">
@@ -335,13 +346,14 @@ function EditServerForm({
   onSave,
   onCancel,
 }: {
-  server: { id: string; name: string; url: string; token: string }
-  onSave: (patch: { name?: string; url?: string; token?: string }) => void
+  server: { id: string; name: string; url: string; token: string; opencodeUrl?: string }
+  onSave: (patch: { name?: string; url?: string; token?: string; opencodeUrl?: string }) => void
   onCancel: () => void
 }) {
   const [name, setName] = useState(server.name)
   const [url, setUrl] = useState(server.url)
   const [token, setToken] = useState(server.token)
+  const [opencodeUrl, setOpencodeUrl] = useState(server.opencodeUrl ?? "")
   const [error, setError] = useState("")
   const [testing, setTesting] = useState(false)
 
@@ -358,6 +370,15 @@ function EditServerForm({
     } catch {
       setError("Invalid URL")
       return
+    }
+    const trimmedOpencodeUrl = opencodeUrl.replace(/\/+$/, "")
+    if (trimmedOpencodeUrl) {
+      try {
+        new URL(trimmedOpencodeUrl)
+      } catch {
+        setError("Invalid OpenCode URL")
+        return
+      }
     }
 
     const urlChanged = trimmedUrl !== server.url
@@ -380,7 +401,7 @@ function EditServerForm({
       }
     }
 
-    onSave({ name, url: trimmedUrl, token })
+    onSave({ name, url: trimmedUrl, token, opencodeUrl: trimmedOpencodeUrl || undefined })
   }
 
   return (
@@ -405,6 +426,12 @@ function EditServerForm({
         value={token}
         onChange={(e) => setToken(e.target.value)}
         required
+      />
+      <input
+        className="w-full rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        placeholder="OpenCode URL (optional)"
+        value={opencodeUrl}
+        onChange={(e) => setOpencodeUrl(e.target.value)}
       />
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-1">

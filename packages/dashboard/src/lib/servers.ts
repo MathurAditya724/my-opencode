@@ -6,6 +6,7 @@ export type ServerConfig = {
   name: string
   url: string
   token: string
+  opencodeUrl?: string
 }
 
 export function loadServers(): ServerConfig[] {

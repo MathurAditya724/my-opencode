@@ -14,6 +14,7 @@ export default function SetupPage() {
   const [name, setName] = useState("")
   const [url, setUrl] = useState("")
   const [token, setToken] = useState("")
+  const [opencodeUrl, setOpencodeUrl] = useState("")
   const [error, setError] = useState("")
   const [testing, setTesting] = useState(false)
 
@@ -39,6 +40,16 @@ export default function SetupPage() {
       return
     }
 
+    const trimmedOpencodeUrl = opencodeUrl.replace(/\/+$/, "")
+    if (trimmedOpencodeUrl) {
+      try {
+        new URL(trimmedOpencodeUrl)
+      } catch {
+        setError("Invalid OpenCode URL")
+        return
+      }
+    }
+
     setTesting(true)
     try {
       const client = new ApiClient(trimmedUrl, token)
@@ -56,7 +67,7 @@ export default function SetupPage() {
       setTesting(false)
     }
 
-    add({ name: name || hostname, url: trimmedUrl, token })
+    add({ name: name || hostname, url: trimmedUrl, token, opencodeUrl: trimmedOpencodeUrl || undefined })
     navigate("/")
   }
 
@@ -103,6 +114,19 @@ export default function SetupPage() {
                 onChange={(e) => setToken(e.target.value)}
                 required
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="opencodeUrl">OpenCode URL (optional)</Label>
+              <Input
+                id="opencodeUrl"
+                placeholder="https://your-opencode.example.com"
+                value={opencodeUrl}
+                onChange={(e) => setOpencodeUrl(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Base URL of your OpenCode web UI for viewing sessions. If omitted, session links will use relative
+                paths.
+              </p>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={testing}>

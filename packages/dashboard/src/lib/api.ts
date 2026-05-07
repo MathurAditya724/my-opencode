@@ -61,7 +61,7 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
-  private baseUrl: string
+  readonly baseUrl: string
   private token: string
   constructor(baseUrl: string, token: string) {
     this.baseUrl = baseUrl

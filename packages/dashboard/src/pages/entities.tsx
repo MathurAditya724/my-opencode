@@ -1,39 +1,55 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useQuery } from "@/hooks/use-api"
-import type { ApiClient, PaginatedEntities } from "@/lib/api"
+import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
+import type { PaginatedEntities } from "@/lib/api"
 import { entityGitHubUrl, opencodeSessionUrl, timeAgo } from "@/lib/format"
+import { useQuery } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Terminal } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
 export default function EntitiesPage() {
-  const [cursor, setCursor] = useState<string | undefined>()
-  const [cursorStack, setCursorStack] = useState<string[]>([])
+  const client = useApiClient()
+  const opencodeUrl = useOpencodeUrl()
+  const [page, setPage] = useState(0)
+  const [cursors, setCursors] = useState<string[]>([""])
 
-  const fetcher = useCallback((c: ApiClient) => c.entities({ limit: 25, cursor }), [cursor])
-  const { data, loading, error, refetch } = useQuery<PaginatedEntities>(fetcher, [cursor])
+  // Reset pagination when the active server changes
+  const serverUrl = client?.baseUrl
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset trigger on server change
+  useEffect(() => {
+    setPage(0)
+    setCursors([""])
+  }, [serverUrl])
+
+  const { data, isLoading, error, refetch } = useQuery<PaginatedEntities>({
+    queryKey: ["entities", client?.baseUrl, cursors[page]],
+    queryFn: () => client!.entities({ limit: 25, cursor: cursors[page] || undefined }),
+    enabled: !!client,
+  })
 
   function nextPage() {
     if (data?.next_cursor) {
-      setCursorStack((s) => [...s, cursor ?? ""])
-      setCursor(data.next_cursor)
+      const next = page + 1
+      setCursors((prev) => {
+        const updated = [...prev]
+        updated[next] = data.next_cursor!
+        return updated
+      })
+      setPage(next)
     }
   }
 
   function prevPage() {
-    const stack = [...cursorStack]
-    const prev = stack.pop()
-    setCursorStack(stack)
-    setCursor(prev || undefined)
+    if (page > 0) setPage(page - 1)
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Entities</h1>
-        <Button variant="ghost" size="icon" onClick={refetch}>
+        <Button variant="ghost" size="icon" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
@@ -43,7 +59,7 @@ export default function EntitiesPage() {
           <CardTitle className="text-base">Issues & Pull Requests</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading && !data ? (
+          {isLoading && !data ? (
             <div className="space-y-3">
               {Array.from({ length: 10 }).map((_, i) => (
                 <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
@@ -51,7 +67,7 @@ export default function EntitiesPage() {
             </div>
           ) : error ? (
             <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive-foreground">
-              {error}
+              {error.message}
             </div>
           ) : (
             <>
@@ -82,7 +98,7 @@ export default function EntitiesPage() {
                           </a>
                           {e.session_id?.trim() && (
                             <a
-                              href={opencodeSessionUrl(e.session_id)}
+                              href={opencodeSessionUrl(e.session_id, opencodeUrl)}
                               target="_blank"
                               rel="noreferrer"
                               className="text-muted-foreground hover:text-foreground"
@@ -107,14 +123,17 @@ export default function EntitiesPage() {
               </div>
 
               {/* Pagination */}
-              <div className="mt-4 flex items-center justify-between">
-                <Button variant="outline" size="sm" disabled={cursorStack.length === 0} onClick={prevPage}>
-                  <ChevronLeft className="h-4 w-4" /> Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={!data?.next_cursor} onClick={nextPage}>
-                  Next <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+              {(page > 0 || data?.next_cursor) && (
+                <div className="mt-4 flex items-center justify-between">
+                  <Button variant="outline" size="sm" disabled={page === 0} onClick={prevPage}>
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Page {page + 1}</span>
+                  <Button variant="outline" size="sm" disabled={!data?.next_cursor} onClick={nextPage}>
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </CardContent>
