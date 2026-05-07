@@ -6,6 +6,7 @@ import * as Sentry from "@sentry/bun"
 import type { Dedup } from "./dedup"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
+import { juniorWebhookHandler } from "./handlers/junior"
 import type { Pipeline } from "./pipeline"
 import type { NormalizedTrigger } from "./types"
 
@@ -18,6 +19,7 @@ export type AppEnv = {
     botLogin: string | null
     githubTriggers: NormalizedTrigger[]
     emailTriggers: NormalizedTrigger[]
+    juniorTriggers: NormalizedTrigger[]
   }
 }
 
@@ -33,6 +35,7 @@ export function createApp(opts: {
     (t) => t.source === "github_webhook",
   )
   const emailTriggers = opts.triggers.filter((t) => t.source === "email")
+  const juniorTriggers = opts.triggers.filter((t) => t.source === "junior")
 
   const app = new Hono<AppEnv>()
 
@@ -90,11 +93,13 @@ export function createApp(opts: {
     c.set("botLogin", opts.botLogin)
     c.set("githubTriggers", githubTriggers)
     c.set("emailTriggers", emailTriggers)
+    c.set("juniorTriggers", juniorTriggers)
     await next()
   })
 
   app.post("/webhooks/github", githubWebhookHandler)
   app.post("/webhooks/email", emailWebhookHandler)
+  app.post("/webhooks/junior", juniorWebhookHandler)
 
   return app
 }

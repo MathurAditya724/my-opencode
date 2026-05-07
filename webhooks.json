@@ -15,6 +15,14 @@
       "prompt_template": "A GitHub webhook just arrived. Read the payload and decide what to do.\n\nEvent: {{ event }}\nAction: {{ action }}\nDelivery: {{ delivery_id }}\n\nPayload:\n{{ payload }}"
     },
     {
+      "name": "junior-issue",
+      "source": "junior",
+      "event": ["junior.issue_created"],
+      "agent": "github-agent",
+      "ignore_authors": ["$BOT_LOGIN"],
+      "prompt_template": "A new issue was filed by Junior (Sentry's internal issue-tracking agent). Read the issue and start working on it.\n\nEvent: {{ event }}\nAction: {{ action }}\nDelivery: {{ delivery_id }}\n\nRepository: {{ payload.repo }}\nIssue #{{ payload.issue_number }}: {{ payload.issue_title }}\nURL: {{ payload.issue_url }}\n\nSummary:\n{{ payload.summary }}\n\nBody:\n{{ payload.issue_body }}\n\nLabels: {{ payload.labels }}\nAssignees: {{ payload.assignees }}\nSource channel: {{ payload.source_channel }}"
+    },
+    {
       "name": "github-comment",
       "event": [
         "pull_request_review_comment",

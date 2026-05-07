@@ -32,6 +32,15 @@ export function extractEntityKey(
     return null
   }
 
+  // Junior events use a flat payload shape: { repo, issue_number, ... }
+  if (event.startsWith("junior.")) {
+    const repo = lookupString(payload, "repo")
+    if (!repo) return null
+    const num = lookup(payload, "issue_number")
+    if (typeof num !== "number") return null
+    return { key: `${repo}#${num}`, repo, number: num, kind: "issue", linkedIssues: [] }
+  }
+
   const repo = lookupString(payload, "repository.full_name")
   if (!repo) return null
 

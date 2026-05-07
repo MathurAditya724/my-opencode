@@ -70,6 +70,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const secret = cfg.secret ?? process.env.GITHUB_WEBHOOK_SECRET ?? ""
     const emailSecret =
       cfg.email_secret ?? process.env.EMAIL_WEBHOOK_SECRET ?? ""
+
     const timeoutMs = cfg.timeout_ms ?? 1_800_000
     const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
     const defaultCwd = cfg.default_cwd ?? ctx.directory
@@ -87,6 +88,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     const triggers = (cfg.triggers ?? []).map((t) => normalizeTrigger(t, botLogin))
     const githubTriggerCount = triggers.filter((t) => t.source === "github_webhook").length
     const emailTriggerCount = triggers.filter((t) => t.source === "email").length
+    const juniorTriggerCount = triggers.filter((t) => t.source === "junior").length
 
     if (triggers.length === 0) {
       console.log(
@@ -102,6 +104,11 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     if (emailTriggerCount > 0 && !emailSecret) {
       console.warn(
         `[opentower] WARNING: no email HMAC secret configured -- /webhooks/email will reject with 503`,
+      )
+    }
+    if (juniorTriggerCount > 0 && !secret) {
+      console.warn(
+        `[opentower] WARNING: no HMAC secret configured -- /webhooks/junior will reject with 503`,
       )
     }
 
@@ -142,7 +149,7 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     })
 
     console.log(
-      `[opentower] listening on http://0.0.0.0:${server.port} (triggers: github=${githubTriggerCount}, email=${emailTriggerCount})`,
+      `[opentower] listening on http://0.0.0.0:${server.port} (triggers: github=${githubTriggerCount}, email=${emailTriggerCount}, junior=${juniorTriggerCount})`,
     )
 
     let stopping = false
