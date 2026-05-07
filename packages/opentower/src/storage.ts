@@ -53,13 +53,17 @@ export type StatsResult = {
 }
 
 export type LifecycleStore = {
-  upsertEntity(row: Pick<EntityRow, "entity_key" | "repo" | "number" | "kind" | "session_id" | "share_url" | "agent">): void
+  upsertEntity(
+    row: Pick<EntityRow, "entity_key" | "repo" | "number" | "kind" | "session_id" | "share_url" | "agent">,
+  ): void
   deleteEntity(entityKey: string): void
   resolveSession(entityKey: string): EntityRow | null
 
   addLink(sourceKey: string, targetKey: string, relation: string): void
 
-  insertDispatch(row: Omit<DispatchRow, "created_at" | "completed_at" | "share_url"> & { share_url?: string | null }): void
+  insertDispatch(
+    row: Omit<DispatchRow, "created_at" | "completed_at" | "share_url"> & { share_url?: string | null },
+  ): void
   updateDispatchSession(id: string, sessionId: string, shareUrl: string | null): void
   completeDispatch(id: string, status: "completed" | "failed" | "timeout"): void
 

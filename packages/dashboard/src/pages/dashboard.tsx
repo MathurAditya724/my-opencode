@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
 import type { PaginatedDispatches, PaginatedEntities, StatsResult } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import { entityGitHubUrl, opencodeSessionUrl, timeAgo } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import {
   Activity,

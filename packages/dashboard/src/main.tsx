@@ -6,13 +6,13 @@ import "./index.css"
 import App from "./App"
 
 const queryClient = new QueryClient({
-	defaultOptions: {
-		queries: {
-			refetchInterval: 30_000,
-			retry: 1,
-			staleTime: 10_000,
-		},
-	},
+  defaultOptions: {
+    queries: {
+      refetchInterval: 30_000,
+      retry: 1,
+      staleTime: 10_000,
+    },
+  },
 })
 
 createRoot(document.getElementById("root")!).render(
