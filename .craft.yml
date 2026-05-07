@@ -22,12 +22,12 @@ targets:
   # craft copies it to the versioned tag and :latest.
   - name: docker
     id: versioned
-    source: ghcr.io/mathuraditya724/my-opencode
-    target: ghcr.io/mathuraditya724/my-opencode
+    source: ghcr.io/mathuraditya724/outpost
+    target: ghcr.io/mathuraditya724/outpost
   - name: docker
     id: latest
-    source: ghcr.io/mathuraditya724/my-opencode
+    source: ghcr.io/mathuraditya724/outpost
     target:
-      image: ghcr.io/mathuraditya724/my-opencode
+      image: ghcr.io/mathuraditya724/outpost
       format: "{{{image}}}:latest"
   - name: github

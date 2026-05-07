@@ -39,7 +39,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MathurAditya724/my-opencode.git",
+    "url": "git+https://github.com/MathurAditya724/outpost.git",
     "directory": "packages/opentower"
   },
   "publishConfig": {
