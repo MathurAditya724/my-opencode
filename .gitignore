@@ -7,6 +7,9 @@
 # (README, AGENTS.md, etc.), not here.
 .opencode/
 
+# Managed by lore — agent-local, not version-controlled
+AGENTS.md
+
 .terraform
 
 .DS_Store

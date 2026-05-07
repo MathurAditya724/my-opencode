@@ -70,6 +70,38 @@ Skip conditions:
 - `check_suite` / `workflow_run` where conclusion isn't `failure` or
   `success`, or `pull_requests` is empty
 
+## Email triage
+
+Email events arrive as raw text with headers (`From`, `Subject`,
+`X-GitHub-Reason`, `X-GitHub-Sender`, etc.) and a body. There is no
+structured payload — you must extract context from the email content.
+
+1. Resolve identity: `ME=$(gh api user --jq .login)` (reuse if
+   already resolved).
+2. Extract repo and PR/issue number from the email headers
+   (`Message-ID`, `List-ID`, `Subject` line, or body links).
+3. If the email is about a PR, check authorship:
+   ```sh
+   AUTHOR=$(gh pr view <N> -R <owner>/<repo> --json author --jq .author.login)
+   ```
+   If `$AUTHOR` equals `$ME`, this is **your PR** — treat it exactly
+   like a webhook event for a PR you authored (review comment →
+   `respond-to-comment`, CI notification → `fix-ci` or
+   `mark-pr-ready`, etc.).
+4. If you're not the author, check if you're a reviewer or assignee:
+   ```sh
+   gh pr view <N> -R <owner>/<repo> --json assignees,reviewRequests --jq '.assignees[].login, .reviewRequests[].login'
+   ```
+   If `$ME` appears, act on it. Otherwise, skip.
+5. For non-GitHub emails (Sentry alerts, forwarded issues, etc.),
+   decide based on the content — no authorship check applies.
+
+Skip conditions for emails:
+- The email is about a repo/PR you're not involved in (not author,
+  reviewer, or assignee) → `SKIPPED: not involved`
+- Automated bot notifications (codecov, deploy previews, dependabot)
+  with no actionable content → `SKIPPED: automated bot notification`
+
 ## Doing the work
 
 After triage, load the appropriate skills and execute directly.

@@ -1,4 +1,4 @@
-# my-opencode
+# 🏕️ outpost
 
 Self-hosted [OpenCode](https://opencode.ai) web UI in a Docker image, ready to deploy on [Railway](https://railway.app) (or any PaaS that builds Dockerfiles and forwards `$PORT`).
 
@@ -218,10 +218,10 @@ listener is up. No auth required.
 
 ```bash
 cp .env.example .env       # edit, fill in the required values
-docker build -t my-opencode .
+docker build -t outpost .
 docker run --rm -it \
   -p 4096:4096 -p 5050:5050 \
-  --env-file .env my-opencode
+  --env-file .env outpost
 ```
 
 Open <http://localhost:4096> for OpenCode. Hit
@@ -230,8 +230,8 @@ want to verify the plugin loaded.
 
 ## Notes
 
-- Override Node at build time: `docker build --build-arg NODE_VERSION=22.20.0 -t my-opencode .`
+- Override Node at build time: `docker build --build-arg NODE_VERSION=22.20.0 -t outpost .`
 - Python isn't installed in the runtime image. If an npm package needs `node-gyp`, install on the fly inside an OpenCode bash session: `sudo apt-get install -y python3`.
 - Pin a different opencode revision/fork at build time:
-  `docker build --build-arg OPENCODE_REPO=https://github.com/anomalyco/opencode.git --build-arg OPENCODE_REF=dev -t my-opencode .`
+  `docker build --build-arg OPENCODE_REPO=https://github.com/anomalyco/opencode.git --build-arg OPENCODE_REF=dev -t outpost .`
   (defaults: `BYK/opencode` @ `byk/cumulative`).

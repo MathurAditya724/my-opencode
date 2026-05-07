@@ -1,13 +1,23 @@
-// Hono app for the plugin's HTTP listener. Routes: healthz and webhook
-// ingest (one per source). Per-route logic lives under ./handlers/.
+// Hono app for the plugin's HTTP listener. Routes: healthz, webhook
+// ingest (one per source), and JSON API for the dashboard SPA.
+// Per-route logic lives under ./handlers/.
 
 import { Hono } from "hono"
+import { cors } from "hono/cors"
+import { timingSafeEqual } from "node:crypto"
 import * as Sentry from "@sentry/bun"
 import type { Dedup } from "./dedup"
 import { githubWebhookHandler } from "./handlers/github"
 import { emailWebhookHandler } from "./handlers/email"
 import { juniorWebhookHandler } from "./handlers/junior"
+import {
+  apiStatsHandler,
+  apiEntitiesHandler,
+  apiEntityDetailHandler,
+  apiDispatchesHandler,
+} from "./handlers/api"
 import type { Pipeline } from "./pipeline"
+import type { LifecycleStore } from "./storage"
 import type { NormalizedTrigger } from "./types"
 
 export type AppEnv = {
@@ -20,7 +30,13 @@ export type AppEnv = {
     githubTriggers: NormalizedTrigger[]
     emailTriggers: NormalizedTrigger[]
     juniorTriggers: NormalizedTrigger[]
+    store: LifecycleStore
   }
+}
+
+function safeTokenCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b))
 }
 
 export function createApp(opts: {
@@ -30,6 +46,8 @@ export function createApp(opts: {
   dedup: Dedup
   pipeline: Pipeline
   botLogin: string | null
+  store: LifecycleStore
+  apiToken: string
 }): Hono<AppEnv> {
   const githubTriggers = opts.triggers.filter(
     (t) => t.source === "github_webhook",
@@ -94,12 +112,40 @@ export function createApp(opts: {
     c.set("githubTriggers", githubTriggers)
     c.set("emailTriggers", emailTriggers)
     c.set("juniorTriggers", juniorTriggers)
+    c.set("store", opts.store)
     await next()
   })
 
   app.post("/webhooks/github", githubWebhookHandler)
   app.post("/webhooks/email", emailWebhookHandler)
   app.post("/webhooks/junior", juniorWebhookHandler)
+
+  // --- Dashboard JSON API ---
+
+  app.use("/api/*", cors({
+    origin: "*",
+    allowMethods: ["GET", "OPTIONS"],
+    allowHeaders: ["Authorization", "Content-Type"],
+    maxAge: 86400,
+  }))
+
+  app.use("/api/*", async (c, next) => {
+    if (!opts.apiToken) {
+      return c.json({ error: "API not configured (OPENTOWER_API_TOKEN not set)" }, 503)
+    }
+    const authHeader = c.req.header("authorization") ?? ""
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+    if (!token || !safeTokenCompare(token, opts.apiToken)) {
+      return c.json({ error: "unauthorized" }, 401)
+    }
+    c.set("store", opts.store)
+    await next()
+  })
+
+  app.get("/api/stats", apiStatsHandler)
+  app.get("/api/entities", apiEntitiesHandler)
+  app.get("/api/entities/:key", apiEntityDetailHandler)
+  app.get("/api/dispatches", apiDispatchesHandler)
 
   return app
 }

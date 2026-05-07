@@ -43,6 +43,13 @@ export type DispatchRow = {
   completed_at: string | null
 }
 
+export type StatsResult = {
+  total_entities: number
+  total_dispatches: number
+  status_counts: Record<string, number>
+  recent_24h: number
+}
+
 export type LifecycleStore = {
   upsertEntity(row: Pick<EntityRow, "entity_key" | "repo" | "number" | "kind" | "session_id" | "agent">): void
   deleteEntity(entityKey: string): void
@@ -52,6 +59,14 @@ export type LifecycleStore = {
 
   insertDispatch(row: Omit<DispatchRow, "created_at" | "completed_at">): void
   completeDispatch(id: string, status: "completed" | "failed" | "timeout"): void
+
+  // Query methods for the dashboard API.
+  listEntities(opts?: { limit?: number; cursor?: string; repo?: string }): { entities: EntityRow[]; next_cursor: string | null }
+  getEntity(entityKey: string): EntityRow | null
+  getEntityDispatches(entityKey: string): DispatchRow[]
+  getEntityLinks(entityKey: string): LinkRow[]
+  listDispatches(opts?: { limit?: number; cursor?: string; status?: string; event?: string }): { dispatches: DispatchRow[]; next_cursor: string | null }
+  getStats(): StatsResult
 
   close(): void
 }
@@ -133,6 +148,60 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
       `UPDATE dispatches SET status = $status, completed_at = datetime('now')
        WHERE id = $id`,
     ),
+
+    getEntityDispatches: db.prepare<DispatchRow, [string]>(
+      "SELECT * FROM dispatches WHERE entity_key = ? ORDER BY created_at DESC",
+    ),
+
+    statsTotalEntities: db.prepare<{ c: number }, []>("SELECT COUNT(*) as c FROM entities"),
+    statsTotalDispatches: db.prepare<{ c: number }, []>("SELECT COUNT(*) as c FROM dispatches"),
+    statsRecent24h: db.prepare<{ c: number }, []>(
+      "SELECT COUNT(*) as c FROM dispatches WHERE created_at > datetime('now', '-1 day')",
+    ),
+    statsStatusCounts: db.prepare<{ status: string; c: number }, []>(
+      "SELECT status, COUNT(*) as c FROM dispatches GROUP BY status",
+    ),
+  }
+
+  // Helper to run raw SQL for dynamic queries (pagination with cursor).
+  function queryEntities(limit: number, cursor: string | null, repo: string | null): EntityRow[] {
+    let sql = "SELECT * FROM entities"
+    const conditions: string[] = []
+    const params: Record<string, string | number> = {}
+    if (cursor) {
+      conditions.push("updated_at < $cursor")
+      params.$cursor = cursor
+    }
+    if (repo) {
+      conditions.push("repo = $repo")
+      params.$repo = repo
+    }
+    if (conditions.length > 0) sql += " WHERE " + conditions.join(" AND ")
+    sql += " ORDER BY updated_at DESC LIMIT $limit"
+    params.$limit = limit + 1
+    return db.prepare<EntityRow, Record<string, string | number>>(sql).all(params)
+  }
+
+  function queryDispatches(limit: number, cursor: string | null, status: string | null, event: string | null): DispatchRow[] {
+    let sql = "SELECT * FROM dispatches"
+    const conditions: string[] = []
+    const params: Record<string, string | number> = {}
+    if (cursor) {
+      conditions.push("created_at < $cursor")
+      params.$cursor = cursor
+    }
+    if (status) {
+      conditions.push("status = $status")
+      params.$status = status
+    }
+    if (event) {
+      conditions.push("event = $event")
+      params.$event = event
+    }
+    if (conditions.length > 0) sql += " WHERE " + conditions.join(" AND ")
+    sql += " ORDER BY created_at DESC LIMIT $limit"
+    params.$limit = limit + 1
+    return db.prepare<DispatchRow, Record<string, string | number>>(sql).all(params)
   }
 
   return {
@@ -198,6 +267,54 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
 
     completeDispatch(id, status) {
       stmts.completeDispatch.run({ $id: id, $status: status })
+    },
+
+    listEntities(opts = {}) {
+      const limit = Math.min(opts.limit ?? 50, 200)
+      const rows = queryEntities(limit, opts.cursor ?? null, opts.repo ?? null)
+      const hasMore = rows.length > limit
+      if (hasMore) rows.pop()
+      return {
+        entities: rows,
+        next_cursor: hasMore && rows.length > 0 ? rows[rows.length - 1].updated_at : null,
+      }
+    },
+
+    getEntity(entityKey) {
+      return stmts.getEntity.get(entityKey) ?? null
+    },
+
+    getEntityDispatches(entityKey) {
+      return stmts.getEntityDispatches.all(entityKey)
+    },
+
+    getEntityLinks(entityKey) {
+      const asSource = stmts.getLinksBySource.all(entityKey)
+      const asTarget = stmts.getLinksByTarget.all(entityKey)
+      return [...asSource, ...asTarget]
+    },
+
+    listDispatches(opts = {}) {
+      const limit = Math.min(opts.limit ?? 50, 200)
+      const rows = queryDispatches(limit, opts.cursor ?? null, opts.status ?? null, opts.event ?? null)
+      const hasMore = rows.length > limit
+      if (hasMore) rows.pop()
+      return {
+        dispatches: rows,
+        next_cursor: hasMore && rows.length > 0 ? rows[rows.length - 1].created_at : null,
+      }
+    },
+
+    getStats() {
+      return db.transaction(() => {
+        const totalEntities = stmts.statsTotalEntities.get()?.c ?? 0
+        const totalDispatches = stmts.statsTotalDispatches.get()?.c ?? 0
+        const recent24h = stmts.statsRecent24h.get()?.c ?? 0
+        const statusRows = stmts.statsStatusCounts.all()
+        const statusCounts: Record<string, number> = {}
+        for (const row of statusRows) statusCounts[row.status] = row.c
+        return { total_entities: totalEntities, total_dispatches: totalDispatches, status_counts: statusCounts, recent_24h: recent24h }
+      })()
     },
 
     close() {

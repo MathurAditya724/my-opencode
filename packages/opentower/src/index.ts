@@ -132,6 +132,13 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       batchWindowMs,
     })
 
+    const apiToken = process.env.OPENTOWER_API_TOKEN ?? ""
+    if (!apiToken) {
+      console.warn(
+        "[opentower] WARNING: OPENTOWER_API_TOKEN not set -- /api/* endpoints will reject with 503",
+      )
+    }
+
     const app = createApp({
       secret,
       emailSecret,
@@ -139,6 +146,8 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       dedup,
       pipeline,
       botLogin,
+      store,
+      apiToken,
     })
 
     console.log(`[opentower] starting Bun.serve on port ${port}...`)
