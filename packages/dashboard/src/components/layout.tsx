@@ -1,5 +1,4 @@
 import { ConfirmDialog } from "@/components/confirm-dialog"
-import { useToast } from "@/components/toast"
 import { useServers } from "@/hooks/use-servers"
 import { ApiClient } from "@/lib/api"
 import { type ServerFormValues, serverFormSchema } from "@/lib/schemas"
@@ -27,6 +26,7 @@ import { useTheme } from "next-themes"
 import { useCallback, useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { Link, NavLink, Outlet } from "react-router-dom"
+import { toast } from "sonner"
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -44,7 +44,6 @@ function safeHostname(url: string): string {
 
 export default function Layout() {
   const { servers, activeId, setActiveId, add, update, remove } = useServers()
-  const { toast } = useToast()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -149,7 +148,7 @@ export default function Layout() {
             onAdd={(cfg) => {
               add(cfg)
               setAdding(false)
-              toast(`Server "${cfg.name}" added`)
+              toast.success(`Server "${cfg.name}" added`)
             }}
             onCancel={() => setAdding(false)}
           />
@@ -165,7 +164,7 @@ export default function Layout() {
                 onSave={(patch) => {
                   update(s.id, patch)
                   setEditingId(null)
-                  toast(`Server "${patch.name || s.name}" updated`)
+                  toast.success(`Server "${patch.name || s.name}" updated`)
                 }}
                 onCancel={() => setEditingId(null)}
               />
@@ -308,7 +307,7 @@ export default function Layout() {
         onConfirm={() => {
           if (deleteTarget) {
             remove(deleteTarget.id)
-            toast(`Server "${deleteTarget.name}" removed`)
+            toast.success(`Server "${deleteTarget.name}" removed`)
             setDeleteTarget(null)
           }
         }}

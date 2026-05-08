@@ -101,35 +101,3 @@
     height: 0;
   }
 }
-
-/* Toast animations */
-.animate-in {
-  animation-duration: 200ms;
-  animation-fill-mode: both;
-}
-
-.slide-in-from-bottom-2 {
-  animation-name: slide-in-from-bottom;
-}
-
-.fade-in {
-  animation-name: fade-in;
-}
-
-@keyframes slide-in-from-bottom {
-  from {
-    transform: translateY(0.5rem);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
