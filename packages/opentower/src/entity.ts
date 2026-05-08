@@ -106,10 +106,16 @@ export async function extractEntityKey(
 // via a single LLM call that extracts the GitHub entity reference.
 // Returns null if no resolver is configured or if the email doesn't
 // relate to a specific GitHub entity.
+//
+// When the resolved entity is a pull request, also scans the email
+// body for "Fixes #N" / "Closes #N" patterns so the pipeline can
+// link the PR session to the originating issue session.
 async function resolveEmailEntity(payload: unknown, resolver?: EntityResolver | null): Promise<EntityKey | null> {
   if (!resolver) return null
   const o = payload as Record<string, unknown> | null
   if (!o || typeof o !== "object") return null
+
+  const bodyText = typeof o.body_text === "string" ? o.body_text : null
 
   const result = await resolver.resolve({
     from: typeof o.from === "string" ? o.from : "",
@@ -121,17 +127,22 @@ async function resolveEmailEntity(payload: unknown, resolver?: EntityResolver | 
     list_id: typeof o.list_id === "string" ? o.list_id : null,
     x_github_reason: typeof o.x_github_reason === "string" ? o.x_github_reason : null,
     x_github_sender: typeof o.x_github_sender === "string" ? o.x_github_sender : null,
-    body_text: typeof o.body_text === "string" ? o.body_text : null,
+    body_text: bodyText,
   })
 
   // Discard low-confidence guesses to avoid incorrect session affinity.
   if (!result.entity || result.confidence === "low") return null
+
+  // For PRs, extract linked issue numbers from the email body so the
+  // pipeline can create issue→PR links for session reuse.
+  const linkedIssues = result.entity.kind === "pull_request" && bodyText ? extractLinkedIssues(bodyText) : []
+
   return {
     key: `${result.entity.repo}#${result.entity.number}`,
     repo: result.entity.repo,
     number: result.entity.number,
     kind: result.entity.kind,
-    linkedIssues: [],
+    linkedIssues,
   }
 }
 
