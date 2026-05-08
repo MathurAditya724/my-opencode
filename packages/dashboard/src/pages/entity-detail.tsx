@@ -1,13 +1,15 @@
+import { ErrorMsg } from "@/components/error-msg"
+import { LastUpdated } from "@/components/last-updated"
+import { SessionLink, SessionLinkPrimary } from "@/components/session-link"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApiClient, useOpencodeUrl } from "@/hooks/use-api"
 import type { EntityDetail } from "@/lib/api"
-import { entityGitHubUrl, formatDuration, opencodeSessionUrl, timeAgo } from "@/lib/format"
-import { cn } from "@/lib/utils"
+import { entityGitHubUrl, formatDuration, timeAgo } from "@/lib/format"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ExternalLink, Link as LinkIcon, RefreshCw, Terminal } from "lucide-react"
+import { ArrowLeft, ExternalLink, Link as LinkIcon } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
 export default function EntityDetailPage() {
@@ -17,7 +19,7 @@ export default function EntityDetailPage() {
   const opencodeUrl = useOpencodeUrl()
   const decodedKey = decodeURIComponent(key ?? "")
 
-  const { data, isLoading, isFetching, error, refetch } = useQuery<EntityDetail>({
+  const { data, isLoading, isFetching, dataUpdatedAt, error, refetch } = useQuery<EntityDetail>({
     queryKey: ["entity", client?.baseUrl, decodedKey],
     queryFn: () => client!.entity(decodedKey),
     enabled: !!client && !!decodedKey,
@@ -37,9 +39,7 @@ export default function EntityDetailPage() {
         <div className="flex-1">
           <h1 className="font-mono text-xl font-bold">{decodedKey}</h1>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => refetch()}>
-          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-        </Button>
+        <LastUpdated dataUpdatedAt={dataUpdatedAt} isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
 
       {isLoading && !data ? (
@@ -48,9 +48,7 @@ export default function EntityDetailPage() {
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive-foreground">
-          {error.message}
-        </div>
+        <ErrorMsg msg={error.message} />
       ) : data ? (
         <>
           <Card>
@@ -75,26 +73,18 @@ export default function EntityDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Session</dt>
-                  {(() => {
-                    const url = data.entity.session_id?.trim()
-                      ? opencodeSessionUrl(data.entity.session_id, data.entity.share_url, data.entity.cwd, opencodeUrl)
-                      : null
-                    return url ? (
-                      <dd>
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 font-mono text-sm text-primary hover:underline"
-                          title={data.entity.session_id}
-                        >
-                          {data.entity.session_id.slice(0, 8)}... <ExternalLink className="h-3 w-3" />
-                        </a>
-                      </dd>
+                  <dd>
+                    {data.entity.session_id?.trim() ? (
+                      <SessionLinkPrimary
+                        sessionId={data.entity.session_id}
+                        shareUrl={data.entity.share_url}
+                        cwd={data.entity.cwd}
+                        opencodeUrl={opencodeUrl}
+                      />
                     ) : (
-                      <dd className="text-sm text-muted-foreground">N/A</dd>
-                    )
-                  })()}
+                      <span className="text-sm text-muted-foreground">N/A</span>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Created</dt>
@@ -170,23 +160,13 @@ export default function EntityDetailPage() {
                           <span className="font-mono text-sm">{d.trigger_name}</span>
                           <StatusBadge status={d.status} />
                           <span className="text-xs text-muted-foreground">{d.event}</span>
-                          {(() => {
-                            const url = d.session_id?.trim()
-                              ? opencodeSessionUrl(d.session_id, d.share_url, d.cwd, opencodeUrl)
-                              : null
-                            return url ? (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                title="OpenCode session"
-                              >
-                                <Terminal className="h-3 w-3" />
-                                session
-                              </a>
-                            ) : null
-                          })()}
+                          <SessionLink
+                            sessionId={d.session_id}
+                            shareUrl={d.share_url}
+                            cwd={d.cwd}
+                            opencodeUrl={opencodeUrl}
+                            showLabel
+                          />
                         </div>
                         <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{timeAgo(d.created_at)}</span>

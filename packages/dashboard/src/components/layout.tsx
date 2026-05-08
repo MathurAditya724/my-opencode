@@ -1,3 +1,5 @@
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { useToast } from "@/components/toast"
 import { useServers } from "@/hooks/use-servers"
 import { ApiClient } from "@/lib/api"
 import { type ServerFormValues, serverFormSchema } from "@/lib/schemas"
@@ -5,9 +7,12 @@ import { cn } from "@/lib/utils"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   GitPullRequest,
   LayoutDashboard,
   Loader2,
+  Menu,
   Monitor,
   Moon,
   Pencil,
@@ -19,7 +24,7 @@ import {
   Zap,
 } from "lucide-react"
 import { useTheme } from "next-themes"
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { Link, NavLink, Outlet } from "react-router-dom"
 
@@ -39,215 +44,276 @@ function safeHostname(url: string): string {
 
 export default function Layout() {
   const { servers, activeId, setActiveId, add, update, remove } = useServers()
+  const { toast } = useToast()
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
-  return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "group/sidebar relative sticky top-0 flex h-screen flex-col bg-card transition-[width] duration-200",
-          collapsed ? "w-14" : "w-64",
-        )}
-      >
-        {/* Logo */}
-        <div className={cn("flex h-14 items-center border-b px-3", collapsed && "justify-center")}>
-          <Link to="/" className="flex items-center gap-2 font-semibold">
-            <span className="text-xl" role="img" aria-label="outpost">
-              🏕️
-            </span>
-            {!collapsed && <span>Outpost</span>}
-          </Link>
-        </div>
+  // Close mobile sidebar on route change
+  const closeMobile = useCallback(() => setMobileOpen(false), [])
 
-        {/* Navigation */}
-        <nav className="flex flex-col gap-1 p-2">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                  collapsed && "justify-center px-2",
-                )
-              }
-              title={collapsed ? item.label : undefined}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {!collapsed && item.label}
-            </NavLink>
-          ))}
-        </nav>
+  // Close mobile sidebar on Escape
+  useEffect(() => {
+    if (!mobileOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMobileOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [mobileOpen])
 
-        {/* Servers section */}
-        <div className="mt-2 flex flex-1 flex-col overflow-hidden border-t">
-          {!collapsed && (
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Servers</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdding(!adding)
-                  setEditingId(null)
-                }}
-                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                title="Add server"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
+  const sidebar = (
+    <aside
+      className={cn(
+        "group/sidebar relative flex h-screen flex-col bg-card transition-[width] duration-200",
+        "max-md:w-64",
+        !mobileOpen && (collapsed ? "w-14" : "w-64"),
+        mobileOpen && "w-64",
+      )}
+    >
+      {/* Logo */}
+      <div className={cn("flex h-14 items-center border-b px-3", collapsed && !mobileOpen && "justify-center")}>
+        <Link to="/" className="flex items-center gap-2 font-semibold" onClick={closeMobile}>
+          <span className="text-xl" role="img" aria-label="outpost">
+            🏕️
+          </span>
+          {(!collapsed || mobileOpen) && <span>Outpost</span>}
+        </Link>
+      </div>
 
-          {collapsed && (
-            <div className="flex justify-center py-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setCollapsed(false)
-                  setAdding(true)
-                }}
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                title="Add server"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+      {/* Navigation */}
+      <nav className="flex flex-col gap-1 p-2">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === "/"}
+            onClick={closeMobile}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                collapsed && !mobileOpen && "justify-center px-2",
+              )
+            }
+            title={collapsed && !mobileOpen ? item.label : undefined}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            {(!collapsed || mobileOpen) && item.label}
+          </NavLink>
+        ))}
+      </nav>
 
-          {/* Add server form */}
-          {adding && !collapsed && (
-            <AddServerForm
-              onAdd={(cfg) => {
-                add(cfg)
-                setAdding(false)
+      {/* Servers section */}
+      <div className="mt-2 flex flex-1 flex-col overflow-hidden border-t">
+        {(!collapsed || mobileOpen) && (
+          <div className="flex items-center justify-between px-3 py-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Servers</span>
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(!adding)
+                setEditingId(null)
               }}
-              onCancel={() => setAdding(false)}
-            />
-          )}
+              className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              title="Add server"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
-          {/* Server list */}
-          <div className="flex-1 overflow-y-auto">
-            {servers.map((s) =>
-              editingId === s.id && !collapsed ? (
-                <EditServerForm
-                  key={s.id}
-                  server={s}
-                  onSave={(patch) => {
-                    update(s.id, patch)
-                    setEditingId(null)
-                  }}
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : (
-                <div
-                  key={s.id}
-                  className={cn(
-                    "group flex items-center gap-2 border-l-2 px-3 py-2 transition-colors",
-                    activeId === s.id ? "border-l-primary bg-primary/5" : "border-l-transparent hover:bg-accent/50",
-                    collapsed && "justify-center px-2",
-                  )}
-                >
-                  {collapsed ? (
+        {collapsed && !mobileOpen && (
+          <div className="flex justify-center py-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCollapsed(false)
+                setAdding(true)
+              }}
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              title="Add server"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Add server form */}
+        {adding && (!collapsed || mobileOpen) && (
+          <AddServerForm
+            onAdd={(cfg) => {
+              add(cfg)
+              setAdding(false)
+              toast(`Server "${cfg.name}" added`)
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+
+        {/* Server list */}
+        <div className="flex-1 overflow-y-auto">
+          {servers.map((s) =>
+            editingId === s.id && (!collapsed || mobileOpen) ? (
+              <EditServerForm
+                key={s.id}
+                server={s}
+                onSave={(patch) => {
+                  update(s.id, patch)
+                  setEditingId(null)
+                  toast(`Server "${patch.name || s.name}" updated`)
+                }}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <div
+                key={s.id}
+                className={cn(
+                  "group flex items-center gap-2 border-l-2 px-3 py-2 transition-colors",
+                  activeId === s.id ? "border-l-primary bg-primary/5" : "border-l-transparent hover:bg-accent/50",
+                  collapsed && !mobileOpen && "justify-center px-2",
+                )}
+              >
+                {collapsed && !mobileOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveId(s.id)}
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium",
+                      activeId === s.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                    )}
+                    title={s.name}
+                  >
+                    {s.name.charAt(0).toUpperCase()}
+                  </button>
+                ) : (
+                  <>
                     <button
                       type="button"
                       onClick={() => setActiveId(s.id)}
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium",
-                        activeId === s.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                      )}
-                      title={s.name}
+                      className="flex min-w-0 flex-1 flex-col items-start text-left"
                     >
-                      {s.name.charAt(0).toUpperCase()}
+                      <span
+                        className={cn("truncate text-sm", activeId === s.id ? "font-medium" : "text-muted-foreground")}
+                      >
+                        {s.name}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">{safeHostname(s.url)}</span>
                     </button>
-                  ) : (
-                    <>
+                    <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <button
                         type="button"
-                        onClick={() => setActiveId(s.id)}
-                        className="flex min-w-0 flex-1 flex-col items-start text-left"
+                        onClick={() => {
+                          setEditingId(s.id)
+                          setAdding(false)
+                        }}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        title="Edit"
                       >
-                        <span
-                          className={cn(
-                            "truncate text-sm",
-                            activeId === s.id ? "font-medium" : "text-muted-foreground",
-                          )}
-                        >
-                          {s.name}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">{safeHostname(s.url)}</span>
+                        <Pencil className="h-3 w-3" />
                       </button>
-                      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(s.id)
-                            setAdding(false)
-                          }}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Edit"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm(`Remove server "${s.name}"?`)) remove(s.id)
-                          }}
-                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive-foreground"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ),
-            )}
-            {servers.length === 0 && !collapsed && !adding && (
-              <div className="px-3 py-4 text-center">
-                <Server className="mx-auto mb-1 h-5 w-5 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">No servers</p>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget({ id: s.id, name: s.name })}
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive-foreground"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            )}
-          </div>
+            ),
+          )}
+          {servers.length === 0 && (!collapsed || mobileOpen) && !adding && (
+            <div className="px-3 py-4 text-center">
+              <Server className="mx-auto mb-1 h-5 w-5 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">No servers</p>
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* Theme toggle */}
-        <div className="border-t px-3 py-2">
-          <ThemeToggle collapsed={collapsed} />
-        </div>
+      {/* Theme toggle */}
+      <div className="border-t px-3 py-2">
+        <ThemeToggle collapsed={collapsed && !mobileOpen} />
+      </div>
 
-        {/* Sidebar rail toggle — inspired by shadcn SidebarRail */}
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={() => {
-            if (!collapsed) {
-              setEditingId(null)
-              setAdding(false)
-            }
-            setCollapsed(!collapsed)
-          }}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="absolute inset-y-0 -right-2 z-20 w-4 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border after:transition-colors hover:after:w-[2px] hover:after:bg-primary focus-visible:after:w-[2px] focus-visible:after:bg-primary"
-        />
-      </aside>
+      {/* Sidebar collapse toggle - visible chevron button (desktop only) */}
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={() => {
+          if (!collapsed) {
+            setEditingId(null)
+            setAdding(false)
+          }
+          setCollapsed(!collapsed)
+        }}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className="absolute -right-3 top-[18px] z-20 hidden h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm hover:text-foreground md:flex"
+      >
+        {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+      </button>
+    </aside>
+  )
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      {/* Mobile hamburger */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className="fixed left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-md border bg-card shadow-sm md:hidden"
+        aria-label="Open menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* Mobile overlay + sidebar */}
+      {mobileOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+            onClick={closeMobile}
+            onKeyDown={() => {}}
+            role="presentation"
+          />
+          <div className="fixed inset-y-0 left-0 z-50 md:hidden">{sidebar}</div>
+        </>
+      )}
+
+      {/* Desktop sidebar */}
+      <div className="sticky top-0 hidden h-screen md:block">{sidebar}</div>
 
       {/* Main content */}
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-7xl p-4 pt-6">
+        <div className="mx-auto max-w-7xl p-4 pt-14 md:pt-6">
           <Outlet />
         </div>
       </main>
+
+      {/* Confirm dialog for server deletion */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Remove server"
+        description={`Are you sure you want to remove "${deleteTarget?.name}"? This cannot be undone.`}
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (deleteTarget) {
+            remove(deleteTarget.id)
+            toast(`Server "${deleteTarget.name}" removed`)
+            setDeleteTarget(null)
+          }
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }
