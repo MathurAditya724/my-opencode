@@ -26,11 +26,16 @@ short and to the point — not overly long or detailed.
    (i.e. not the repo's default branch), reuse it. Don't create a new
    one on top.
 
-2. **Open the PR** with `gh pr create --draft`. Title should match the
-   commit subject. Body should be a 1–3 sentence summary plus a
-   "Testing" line if relevant — followed by the full implementation
-   plan inside a hidden HTML comment so reviewers can read it without
-   leaving GitHub but it doesn't bloat the visible description:
+2. **Open the PR** with `gh pr create --draft`. Title should follow
+   the repo's commit convention. If the repo uses conventional commits
+   (check recent history with `git log --oneline -10`), use the format
+   `<type>(<scope>): <subject>` where type is `fix`, `feat`, `chore`,
+   `refactor`, `docs`, `test`, etc. Do not include AI-attribution
+   labels like `[bot]`, `[claude]`, or `[ai]` in the title. Body
+   should be a 1–3 sentence summary plus a "Testing" line if relevant
+   — followed by the full implementation plan inside a hidden HTML
+   comment so reviewers can read it without leaving GitHub but it
+   doesn't bloat the visible description:
 
    ```sh
    gh pr create --draft \

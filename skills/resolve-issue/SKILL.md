@@ -42,14 +42,21 @@ and respond to feedback.
    gh repo clone <other-owner>/<other-repo> ~/dev/<other-owner>/<other-repo> -- --depth=50
    ```
    Only push changes to the repo where the fix belongs.
-4. Plan — state what you'll do before doing it.
-5. Implement. Keep the diff focused.
-6. **Discover and run tests** — see the test discovery section below.
-7. Load `deslop` skill — clean up AI noise.
-8. Load `review` skill — self-review. Fix issues and re-run deslop
+4. **Investigate before implementing.** Before writing any code, you
+   should be able to state: "This breaks because **X**, in **Y** path,
+   after **Z** condition." If you cannot fill in X, Y, and Z, keep
+   investigating. See `references/investigation-protocol.md` for the
+   full protocol.
+5. Plan — state what you'll change and why it addresses the root cause.
+6. Implement. Keep the diff focused.
+7. **Verify the change.** Select the right verification method for the
+   shape of the change — see `references/verification-harness.md`.
+   Then run the project's test suite (see test discovery below).
+8. Load `deslop` skill — clean up AI noise.
+9. Load `review` skill — self-review. Fix issues and re-run deslop
    until clean.
-9. Commit with `Fixes #<number>` in the message. Push.
-10. Load `pr` skill — open a draft PR. Be explicit about what's
+10. Commit with `Fixes #<number>` in the message. Push.
+11. Load `pr` skill — open a draft PR. Be explicit about what's
     complete vs. uncertain.
 
 ## Conflict resolution
@@ -115,4 +122,6 @@ note "no test suite found" in the PR description. Don't spend more
 than 2 minutes on a failing test suite that's unrelated to your
 changes — note it and move on.
 
-Only BLOCKED for genuine impossibility (auth, repo missing, contradictory issue).
+Reserve BLOCKED for genuine impossibility (missing auth, deleted repo,
+contradictory requirements). A best-effort draft PR is almost always
+better than blocking.
