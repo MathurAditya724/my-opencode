@@ -13,12 +13,15 @@ import { verifySha256Signature } from "../hmac"
 import { MAX_EMAIL_BODY_BYTES, readBodyBytes } from "../http"
 import { evaluateAndDispatch } from "../matchers"
 
-// GitHub notification reasons that cannot cause a feedback loop when the
-// sender matches the bot. CI results, security alerts, and similar
-// automated notifications are safe to process even from the bot's own
-// account — the bot responding to them won't generate another email of
-// the same kind.
-const SELF_LOOP_SAFE_REASONS: ReadonlySet<string> = new Set(["ci_activity", "security_alert"])
+// GitHub notification reasons that CAN cause a feedback loop when the
+// sender is the bot. The bot commenting or reviewing triggers an email
+// notification; processing that notification could lead to another
+// comment → infinite loop.
+//
+// Everything else (assign, ci_activity, security_alert, state_change,
+// review_requested, push, mention, etc.) is safe — responding to those
+// performs a different action than what triggered the notification.
+const SELF_LOOP_RISK_REASONS: ReadonlySet<string> = new Set(["comment", "your_activity"])
 
 export type EmailEvent = {
   from: string
@@ -71,15 +74,15 @@ export async function emailWebhookHandler(c: Context<AppEnv>) {
   const reason = (event.x_github_reason ?? "forwarded").toLowerCase()
   const triggerEvent = `email.${reason}`
 
-  // Self-loop guard: drop emails triggered by the bot's own activity,
-  // but only for reasons that can actually cause feedback loops.
-  // Automated notifications like CI results are safe — responding to
-  // a CI failure won't generate another CI email.
+  // Self-loop guard: only drop emails from the bot's own comment or
+  // review activity — those can cause feedback loops (comment → email
+  // → respond → comment → …). All other self-triggered notifications
+  // (assignments, CI, state changes, pushes) are safe to process.
   if (
     botLogin &&
     ghSender &&
     ghSender.toLowerCase() === botLogin.toLowerCase() &&
-    !SELF_LOOP_SAFE_REASONS.has(reason)
+    SELF_LOOP_RISK_REASONS.has(reason)
   ) {
     return c.json({
       ok: true,
