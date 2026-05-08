@@ -22,8 +22,10 @@ prefix is required for counting but the rest should read naturally.
 
 1. Find failed runs: `gh run list --branch <branch> --status failure`
 2. Read logs: `gh run view <id> --log-failed`
-3. Categorize: test failure, type/lint error, build error, snapshot
-   diff, flaky test, or infra issue.
+3. Categorize the failure — see `references/failure-taxonomy.md` for
+   the full taxonomy and decision tree. Categories: test failure,
+   type/lint error, build error, snapshot diff, flaky test, or infra
+   issue.
 4. Flaky? Re-run once (`gh run rerun <id> --failed`) and stop.
 5. Infra/dependency issue? BLOCKED.
 6. Otherwise: make the smallest fix. Reproduce locally if possible.
@@ -32,5 +34,6 @@ prefix is required for counting but the rest should read naturally.
    how. Write it like a teammate explaining the fix, not a status
    report.
 
-Don't modify CI config unless the failure is specifically in it.
-Don't bump dependency versions. Don't force-push. Don't merge.
+Avoid modifying CI config unless the failure is specifically in it.
+Avoid bumping dependency versions — the fix should target the code,
+not the toolchain. Don't force-push. Don't merge.

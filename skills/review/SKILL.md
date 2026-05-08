@@ -69,6 +69,20 @@ Keep `summary` and `suggested_fix` terse — one or two sentences each.
 The fix-applier reading these has the file open already; don't restate
 context the diff already carries.
 
+## Confidence calibration
+
+Assign a confidence level to each potential finding before including
+it. See `references/confidence-calibration.md` for the full table.
+
+- **HIGH** — you traced the code path and verified the issue. Report it.
+- **MEDIUM** — the pattern is suspicious and likely wrong. Report it,
+  noting uncertainty in `summary` if relevant.
+- **LOW** — the code looks unusual but could be intentional. Do **not**
+  report it.
+
+Bug findings should almost always be HIGH. If you can't trace the
+code path to confirm the issue, it's speculation — downgrade or drop.
+
 ## When to flag vs. not
 
 - A `style` finding only counts if the PR's *neighbouring* code uses a
@@ -79,6 +93,18 @@ context the diff already carries.
   a change unrelated to the issue. When in doubt, don't flag.
 - Don't include "everything looks good" notes in `findings`. Empty
   array is the correct positive signal.
+
+## Not a finding
+
+Before reporting, check `references/not-a-finding.md` for patterns
+that look suspicious but are typically correct. Common examples:
+
+- Null checks on values that "should" be set (defensive, valid if
+  function is public or called from multiple sites)
+- Empty catch blocks in error boundaries (framework convention)
+- Trivial getters/setters (not worth a test-gap finding)
+- Fixing a typo adjacent to changed code (not scope creep)
+- TODO comments describing known limitations (not stale docs)
 
 ---
 

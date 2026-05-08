@@ -122,6 +122,7 @@ load the situation skill for the task at hand.
    - `pr` — create a draft PR
    - `mark-pr-ready` — promote draft to ready-for-review
    - `apply-fixes` — apply review findings as code changes
+   - `auto-merge` — merge small, non-disruptive PRs after checks pass
 
 ### Multi-repo investigation
 
