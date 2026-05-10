@@ -101,15 +101,19 @@ export async function extractEntityKey(
   return null
 }
 
-// Resolve email entity key using the AI resolver.
+// Resolve email entity key using the AI resolver, then verify via gh CLI.
 // The resolver handles all email sources (GitHub, Sentry, CI, etc.)
 // via a single LLM call that extracts the GitHub entity reference.
 // Returns null if no resolver is configured or if the email doesn't
 // relate to a specific GitHub entity.
 //
-// When the resolved entity is a pull request, also scans the email
-// body for "Fixes #N" / "Closes #N" patterns so the pipeline can
-// link the PR session to the originating issue session.
+// After AI extraction, verifies the entity exists via `gh` CLI and
+// gets the correct kind (issue vs PR). This ensures session affinity
+// uses the correct entity type even when the AI guesses wrong.
+//
+// For PRs, extracts linked issue numbers from the actual PR body
+// (fetched via gh) rather than the email body, which may be truncated
+// or not contain the full PR description.
 async function resolveEmailEntity(payload: unknown, resolver?: EntityResolver | null): Promise<EntityKey | null> {
   if (!resolver) return null
   const o = payload as Record<string, unknown> | null
@@ -133,15 +137,31 @@ async function resolveEmailEntity(payload: unknown, resolver?: EntityResolver | 
   // Discard low-confidence guesses to avoid incorrect session affinity.
   if (!result.entity || result.confidence === "low") return null
 
-  // For PRs, extract linked issue numbers from the email body so the
-  // pipeline can create issue→PR links for session reuse.
-  const linkedIssues = result.entity.kind === "pull_request" && bodyText ? extractLinkedIssues(bodyText) : []
+  // Verify the entity exists and get the correct kind via gh CLI.
+  // This ensures session affinity uses the correct entity type even
+  // when the AI guesses wrong (e.g., says "issue" for a PR).
+  const verified = await resolver.verify(result.entity)
+  if (!verified) {
+    // Entity doesn't exist or gh CLI failed — fall back to AI result
+    // but only extract linked issues from email body (less reliable)
+    const linkedIssues = result.entity.kind === "pull_request" && bodyText ? extractLinkedIssues(bodyText) : []
+    return {
+      key: `${result.entity.repo}#${result.entity.number}`,
+      repo: result.entity.repo,
+      number: result.entity.number,
+      kind: result.entity.kind,
+      linkedIssues,
+    }
+  }
+
+  // Use verified kind and extract linked issues from the actual PR body
+  const linkedIssues = verified.kind === "pull_request" && verified.body ? extractLinkedIssues(verified.body) : []
 
   return {
-    key: `${result.entity.repo}#${result.entity.number}`,
-    repo: result.entity.repo,
-    number: result.entity.number,
-    kind: result.entity.kind,
+    key: `${verified.repo}#${verified.number}`,
+    repo: verified.repo,
+    number: verified.number,
+    kind: verified.kind,
     linkedIssues,
   }
 }

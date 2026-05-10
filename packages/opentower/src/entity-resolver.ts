@@ -7,6 +7,10 @@
 // It replaces regex-based header parsing with a unified LLM call that
 // can reason about cross-platform references (e.g. a Sentry error that
 // was introduced by a specific PR).
+//
+// After AI extraction, the resolver verifies the entity via `gh` CLI
+// to ensure it exists and to get the correct kind (issue vs PR). This
+// prevents session affinity errors when the AI guesses the wrong kind.
 
 import { createAnthropic } from "@ai-sdk/anthropic"
 import * as Sentry from "@sentry/bun"
@@ -74,6 +78,15 @@ Do NOT return null just because an email is automated or informational. If a bot
 - Set confidence to "low" only when the link between the email and the entity is very tenuous
 - For the \`kind\` field: use "pull_request" only when you have evidence it's a PR; default to "issue" otherwise`
 
+// Result of verifying an entity via `gh` CLI.
+export type VerifiedEntity = {
+  repo: string
+  number: number
+  kind: "issue" | "pull_request"
+  // PR body for extracting linked issues (only present for PRs)
+  body: string | null
+}
+
 export type EntityResolver = {
   resolve(email: {
     from: string
@@ -87,6 +100,73 @@ export type EntityResolver = {
     x_github_sender: string | null
     body_text: string | null
   }): Promise<EntityResult>
+  // Verify an AI-extracted entity via `gh` CLI. Returns the verified
+  // entity with correct kind and PR body, or null if verification fails.
+  verify(entity: { repo: string; number: number }): Promise<VerifiedEntity | null>
+}
+
+// Verify an entity via `gh` CLI. Checks both PR and issue endpoints
+// to determine the correct kind and fetch the body for link extraction.
+async function verifyEntity(entity: { repo: string; number: number }): Promise<VerifiedEntity | null> {
+  // Try PR first since it's more specific (issues API also returns PRs
+  // but with less detail)
+  try {
+    const prProc = Bun.spawn(["gh", "pr", "view", String(entity.number), "-R", entity.repo, "--json", "number,body"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const prOut = await new Response(prProc.stdout).text()
+    const prCode = await prProc.exited
+    if (prCode === 0) {
+      const pr = JSON.parse(prOut) as { number: number; body: string }
+      Sentry.logger.info("entity_resolver.verified", {
+        entity: `${entity.repo}#${entity.number}`,
+        kind: "pull_request",
+      })
+      return {
+        repo: entity.repo,
+        number: entity.number,
+        kind: "pull_request",
+        body: pr.body ?? null,
+      }
+    }
+  } catch {
+    // PR fetch failed, try issue
+  }
+
+  // Try issue
+  try {
+    const issueProc = Bun.spawn(
+      ["gh", "issue", "view", String(entity.number), "-R", entity.repo, "--json", "number,body"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
+    const issueOut = await new Response(issueProc.stdout).text()
+    const issueCode = await issueProc.exited
+    if (issueCode === 0) {
+      const issue = JSON.parse(issueOut) as { number: number; body: string }
+      Sentry.logger.info("entity_resolver.verified", {
+        entity: `${entity.repo}#${entity.number}`,
+        kind: "issue",
+      })
+      return {
+        repo: entity.repo,
+        number: entity.number,
+        kind: "issue",
+        body: issue.body ?? null,
+      }
+    }
+  } catch {
+    // Issue fetch also failed
+  }
+
+  Sentry.logger.warn("entity_resolver.verify_failed", {
+    entity: `${entity.repo}#${entity.number}`,
+    reason: "entity not found via gh CLI",
+  })
+  return null
 }
 
 export function createEntityResolver(): EntityResolver | null {
@@ -146,6 +226,10 @@ export function createEntityResolver(): EntityResolver | null {
           reasoning: `resolver error: ${err instanceof Error ? err.message : String(err)}`,
         }
       }
+    },
+
+    async verify(entity) {
+      return verifyEntity(entity)
     },
   }
 }
