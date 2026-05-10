@@ -248,6 +248,7 @@ export default function DashboardPage() {
                               {d.entity_key}
                             </Link>
                           )}
+                          <SessionLink sessionId={d.session_id} shareUrl={d.share_url} cwd={d.cwd} />
                           <span>{timeAgo(d.created_at)}</span>
                         </div>
                       </div>
