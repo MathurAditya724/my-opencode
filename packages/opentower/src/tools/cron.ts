@@ -17,8 +17,15 @@ export function makeCronTools(opts: CronToolsOptions) {
 
   return {
     create_cron_job: tool({
-      description:
-        "Create a scheduled cron job that runs a prompt at specified times. Use this to schedule recurring tasks like daily triage, periodic checks, or one-time delayed executions.",
+      description: `Create a scheduled cron job that runs a prompt at specified times. Use this to schedule recurring tasks like daily triage, periodic checks, or one-time delayed executions.
+
+IMPORTANT: Cron jobs run automatically and can have significant impact on resources and workflows. Before calling this tool, you MUST:
+1. Present the full job details to the user (name, cron schedule in human-readable form, prompt, timezone, etc.)
+2. Explain what the cron job will do and when it will run
+3. Ask for explicit user confirmation to proceed
+4. Only execute this tool AFTER the user has approved
+
+Never create cron jobs without user confirmation.`,
       args: {
         name: tool.schema
           .string()
@@ -275,7 +282,14 @@ ${job.prompt}`
     }),
 
     delete_cron_job: tool({
-      description: "Delete a cron job by name or ID. This permanently removes the job and its execution history.",
+      description: `Delete a cron job by name or ID. This permanently removes the job and its execution history.
+
+IMPORTANT: This is a destructive action that cannot be undone. Before calling this tool, you MUST:
+1. Confirm which job will be deleted by showing its name and details
+2. Ask for explicit user confirmation to proceed
+3. Only execute this tool AFTER the user has approved
+
+Never delete cron jobs without user confirmation.`,
       args: {
         identifier: tool.schema.string().min(1).describe("The cron job name or ID to delete"),
       },
