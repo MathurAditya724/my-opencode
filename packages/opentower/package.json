@@ -1,6 +1,6 @@
 {
   "name": "opentower",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "description": "OpenCode plugin: receive GitHub webhooks and dispatch them to OpenCode agent sessions",
