@@ -3,7 +3,7 @@
 // that run prompts at specified times.
 
 import { tool } from "@opencode-ai/plugin"
-import type { CronScheduler } from "../cron"
+import { type CronScheduler, validateCronInterval } from "../cron"
 import type { LifecycleStore } from "../storage"
 
 export type CronToolsOptions = {
@@ -72,6 +72,11 @@ Never create cron jobs without user confirmation.`,
         const nextRun = scheduler.getNextRun(cronExpression, timezone)
         if (!nextRun) {
           return { output: `Error: Invalid cron expression "${cronExpression}"` }
+        }
+
+        const intervalValidation = validateCronInterval(cronExpression, timezone)
+        if (!intervalValidation.valid) {
+          return { output: `Error: ${intervalValidation.error}` }
         }
 
         const id = crypto.randomUUID()
@@ -236,6 +241,10 @@ ${job.prompt}`
           if (!nextRun) {
             return { output: `Error: Invalid cron expression "${expr}"` }
           }
+          const intervalValidation = validateCronInterval(expr, tz)
+          if (!intervalValidation.valid) {
+            return { output: `Error: ${intervalValidation.error}` }
+          }
           updates.cron_expression = expr
           updates.next_run_at = nextRun.toISOString()
           changes.push(`schedule: ${expr}`)
@@ -328,10 +337,13 @@ Never delete cron jobs without user confirmation.`,
           return { output: `Cannot trigger disabled cron job "${job.name}". Enable it first.` }
         }
 
-        scheduler.reload()
+        const triggered = await scheduler.triggerJob(job.id)
+        if (!triggered) {
+          return { output: `Failed to trigger cron job "${job.name}".` }
+        }
 
         return {
-          output: `Triggered cron job "${job.name}" (id: ${job.id}). The job will execute on the next scheduler tick.`,
+          output: `Triggered cron job "${job.name}" (id: ${job.id}). Job execution started.`,
           metadata: { cron_job_id: job.id },
         }
       },

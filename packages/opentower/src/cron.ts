@@ -14,6 +14,47 @@ export type CronScheduler = {
   stop(): void
   reload(): void
   getNextRun(cronExpression: string, timezone?: string): Date | null
+  triggerJob(jobId: string): Promise<boolean>
+}
+
+const MIN_INTERVAL_MS = 60 * 60 * 1000 // 1 hour in milliseconds
+
+export type CronIntervalValidation =
+  | { valid: true; intervalMs: number }
+  | { valid: false; intervalMs: number; error: string }
+
+/**
+ * Validates that a cron expression doesn't run more frequently than once per hour.
+ * Returns the minimum interval between runs in milliseconds.
+ */
+export function validateCronInterval(cronExpression: string, timezone = "UTC"): CronIntervalValidation {
+  try {
+    const cron = new Cron(cronExpression, { timezone })
+    const nextRuns = cron.nextRuns(2)
+
+    if (nextRuns.length < 2) {
+      return { valid: true, intervalMs: Number.POSITIVE_INFINITY }
+    }
+
+    const intervalMs = nextRuns[1].getTime() - nextRuns[0].getTime()
+
+    if (intervalMs < MIN_INTERVAL_MS) {
+      const intervalMinutes = Math.round(intervalMs / 60000)
+      return {
+        valid: false,
+        intervalMs,
+        error: `Cron expression runs every ${intervalMinutes} minute(s), but the minimum allowed interval is 1 hour. Use expressions like "0 * * * *" (hourly) or less frequent.`,
+      }
+    }
+
+    return { valid: true, intervalMs }
+  } catch {
+    return {
+      valid: false,
+      intervalMs: 0,
+      error: `Invalid cron expression: "${cronExpression}"`,
+    }
+  }
 }
 
 export type CronSchedulerOptions = {
@@ -189,5 +230,13 @@ export function makeCronScheduler(opts: CronSchedulerOptions): CronScheduler {
     },
 
     getNextRun,
+
+    async triggerJob(jobId: string): Promise<boolean> {
+      const job = store.getCronJob(jobId)
+      if (!job) return false
+      if (!job.enabled) return false
+      await executeJob(job)
+      return true
+    },
   }
 }

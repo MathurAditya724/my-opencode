@@ -1,5 +1,5 @@
 import type { Context } from "hono"
-import type { CronScheduler } from "../cron"
+import { type CronScheduler, validateCronInterval } from "../cron"
 import type { AppEnv } from "../handler"
 
 export function makeCronHandlers(scheduler: CronScheduler) {
@@ -41,9 +41,16 @@ export function makeCronHandlers(scheduler: CronScheduler) {
         return c.json({ error: "cron_expression is required" }, 400)
       }
 
-      const nextRun = scheduler.getNextRun(cron_expression, body.timezone || "UTC")
+      const timezone = typeof body.timezone === "string" ? body.timezone.trim() || "UTC" : "UTC"
+
+      const nextRun = scheduler.getNextRun(cron_expression, timezone)
       if (!nextRun) {
         return c.json({ error: "invalid cron expression" }, 400)
+      }
+
+      const intervalValidation = validateCronInterval(cron_expression, timezone)
+      if (!intervalValidation.valid) {
+        return c.json({ error: intervalValidation.error }, 400)
       }
 
       const prompt = typeof body.prompt === "string" ? body.prompt.trim() : ""
@@ -63,7 +70,6 @@ export function makeCronHandlers(scheduler: CronScheduler) {
 
       const id = crypto.randomUUID()
       const entity_key = typeof body.entity_key === "string" ? body.entity_key.trim() || null : null
-      const timezone = typeof body.timezone === "string" ? body.timezone.trim() || "UTC" : "UTC"
       const run_once = body.run_once === true
 
       store.createCronJob({
@@ -152,6 +158,10 @@ export function makeCronHandlers(scheduler: CronScheduler) {
           if (!nextRun) {
             return c.json({ error: "invalid cron expression" }, 400)
           }
+          const intervalValidation = validateCronInterval(cron_expression, tz)
+          if (!intervalValidation.valid) {
+            return c.json({ error: intervalValidation.error }, 400)
+          }
           updates.cron_expression = cron_expression
           updates.next_run_at = nextRun.toISOString()
         }
@@ -172,11 +182,11 @@ export function makeCronHandlers(scheduler: CronScheduler) {
       }
 
       if (typeof body.timezone === "string") {
-        const timezone = body.timezone.trim() || "UTC"
-        if (timezone !== existing.timezone) {
-          updates.timezone = timezone
+        const newTimezone = body.timezone.trim() || "UTC"
+        if (newTimezone !== existing.timezone) {
+          updates.timezone = newTimezone
           const expr = updates.cron_expression ?? existing.cron_expression
-          const nextRun = scheduler.getNextRun(expr, timezone)
+          const nextRun = scheduler.getNextRun(expr, newTimezone)
           if (nextRun) updates.next_run_at = nextRun.toISOString()
         }
       }
@@ -218,9 +228,12 @@ export function makeCronHandlers(scheduler: CronScheduler) {
         return c.json({ error: "cron job is disabled" }, 400)
       }
 
-      scheduler.reload()
+      const triggered = await scheduler.triggerJob(id)
+      if (!triggered) {
+        return c.json({ error: "failed to trigger cron job" }, 500)
+      }
 
-      return c.json({ triggered: id, message: "job will execute on next scheduler tick" })
+      return c.json({ triggered: id, message: "job execution started" })
     },
 
     executions(c: Context<AppEnv>) {
