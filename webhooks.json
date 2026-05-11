@@ -1,5 +1,5 @@
 {
-  "max_concurrent": 2,
+  "max_concurrent": 5,
   "timeout_ms": 1800000,
   "triggers": [
     {
