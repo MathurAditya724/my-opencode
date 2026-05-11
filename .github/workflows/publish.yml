@@ -84,10 +84,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          echo "Waiting for CI workflow on release/${{ steps.inputs.outputs.version }}..."
-          gh run list --workflow CI --branch "release/${{ steps.inputs.outputs.version }}" \
-            --json databaseId,status --jq '.[0].databaseId' | xargs -I{} \
-            gh run watch {} --exit-status
+          branch="release/${{ steps.inputs.outputs.version }}"
+          echo "Waiting for CI workflow on $branch..."
+          run_id=$(gh run list --workflow CI --branch "$branch" --json databaseId --jq '.[0].databaseId')
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "::error::No CI workflow run found for branch $branch"
+            exit 1
+          fi
+          gh run watch "$run_id" --exit-status
 
       - name: Publish
         run: craft publish "${{ steps.inputs.outputs.version }}" --no-input --no-status-check
