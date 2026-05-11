@@ -81,18 +81,6 @@ RUN install -d -m 0755 /out/etc/apt/keyrings \
       -o /out/etc/apt/keyrings/githubcli-archive-keyring.gpg
 
 
-# ---- Stage 1b: build dashboard SPA ----
-# Separate stage so vite/typescript devDeps don't bloat the runtime image.
-FROM debian:bookworm-slim AS dashboard-builder
-
-COPY --from=downloader /out/opt/bun/bin /opt/bun/bin
-ENV PATH=/opt/bun/bin:$PATH
-
-WORKDIR /build
-COPY packages/dashboard packages/dashboard
-RUN cd packages/dashboard && bun install --frozen-lockfile && bun run build
-
-
 # ---- Stage 2: runtime ----
 FROM debian:bookworm-slim AS runtime
 
@@ -204,26 +192,14 @@ COPY --chown=developer:developer agents \
 COPY --chown=developer:developer skills \
      /home/developer/.config/opencode/skills
 
-# Bundled plugin packages. The `opentower` plugin lives under
-# packages/ as a workspace-style file: dep referenced from
-# opencode-config-package.json. `bun install` resolves it into
-# node_modules/ alongside the npm-published @loreai/opencode plugin;
-# both are referenced by absolute file:// URL from opencode.json.
+# Plugin dependencies (opentower, @loreai/opencode) are installed from
+# npm via opencode-config-package.json. opentower's published tarball
+# includes the pre-built dashboard SPA in public/.
 #
 # IMPORTANT: do NOT mount a runtime volume over /home/developer/.config/
 # opencode — it would mask the baked-in node_modules and the plugin
-# loader would fail at startup with `Cannot find module '@opencode-ai/
-# plugin'`. Persistent state (sessions, auth) lives at ~/dev/.opencode
-# already via the symlink set up below; that's the only directory you
-# should attach a volume to.
-COPY --chown=developer:developer packages \
-     /home/developer/.config/opencode/packages
-
-# Dashboard assets — handler.ts skips static serving when public/ is missing.
-COPY --from=dashboard-builder --chown=developer:developer \
-     /build/packages/dashboard/dist \
-     /home/developer/.config/opencode/packages/opentower/public
-
+# loader would fail at startup. Persistent state lives at ~/dev/.opencode
+# via the symlink set up above.
 COPY --chown=developer:developer opencode-config-package.json \
      /home/developer/.config/opencode/package.json
 COPY --chown=developer:developer opencode-config-bun.lock \
