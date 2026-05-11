@@ -81,6 +81,22 @@ RUN install -d -m 0755 /out/etc/apt/keyrings \
       -o /out/etc/apt/keyrings/githubcli-archive-keyring.gpg
 
 
+# ---- Stage 1b: build the dashboard SPA ----
+# The dashboard is a Vite/React SPA under packages/dashboard/. Its build
+# output (dist/) is copied into packages/opentower/public/ so the
+# opentower plugin can serve it as a single-origin dashboard. We build in
+# a separate stage so devDependencies (vite, typescript, etc.) never
+# bloat the runtime image. Bun from the downloader stage is reused.
+FROM debian:bookworm-slim AS dashboard-builder
+
+COPY --from=downloader /out/opt/bun/bin /opt/bun/bin
+ENV PATH=/opt/bun/bin:$PATH
+
+WORKDIR /build
+COPY packages/dashboard packages/dashboard
+RUN cd packages/dashboard && bun install --frozen-lockfile && bun run build
+
+
 # ---- Stage 2: runtime ----
 FROM debian:bookworm-slim AS runtime
 
@@ -206,6 +222,15 @@ COPY --chown=developer:developer skills \
 # should attach a volume to.
 COPY --chown=developer:developer packages \
      /home/developer/.config/opencode/packages
+
+# Copy pre-built dashboard assets from the builder stage into the
+# opentower plugin's public/ directory. The plugin's serveStatic guard
+# checks existsSync(public/) at startup — without these files the
+# dashboard silently won't be served.
+COPY --from=dashboard-builder --chown=developer:developer \
+     /build/packages/dashboard/dist \
+     /home/developer/.config/opencode/packages/opentower/public
+
 COPY --chown=developer:developer opencode-config-package.json \
      /home/developer/.config/opencode/package.json
 COPY --chown=developer:developer opencode-config-bun.lock \
