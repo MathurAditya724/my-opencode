@@ -81,6 +81,18 @@ RUN install -d -m 0755 /out/etc/apt/keyrings \
       -o /out/etc/apt/keyrings/githubcli-archive-keyring.gpg
 
 
+# ---- Stage 1b: build dashboard SPA ----
+# Separate stage so vite/typescript devDeps don't bloat the runtime image.
+FROM debian:bookworm-slim AS dashboard-builder
+
+COPY --from=downloader /out/opt/bun/bin /opt/bun/bin
+ENV PATH=/opt/bun/bin:$PATH
+
+WORKDIR /build
+COPY packages/dashboard packages/dashboard
+RUN cd packages/dashboard && bun install --frozen-lockfile && bun run build
+
+
 # ---- Stage 2: runtime ----
 FROM debian:bookworm-slim AS runtime
 
@@ -206,6 +218,12 @@ COPY --chown=developer:developer skills \
 # should attach a volume to.
 COPY --chown=developer:developer packages \
      /home/developer/.config/opencode/packages
+
+# Dashboard assets — handler.ts skips static serving when public/ is missing.
+COPY --from=dashboard-builder --chown=developer:developer \
+     /build/packages/dashboard/dist \
+     /home/developer/.config/opencode/packages/opentower/public
+
 COPY --chown=developer:developer opencode-config-package.json \
      /home/developer/.config/opencode/package.json
 COPY --chown=developer:developer opencode-config-bun.lock \
