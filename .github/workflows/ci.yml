@@ -59,6 +59,13 @@ jobs:
 
       # --- Release-branch only: npm tarball + Docker image ---
 
+      # Build dashboard assets into opentower/public before packing.
+      # bun pm pack does NOT run prepublishOnly, so we must build explicitly.
+      - name: Build dashboard
+        if: startsWith(github.ref, 'refs/heads/release/')
+        run: bun run build
+        working-directory: packages/opentower
+
       # Pack and upload the npm tarball.
       - name: Pack tarball
         if: startsWith(github.ref, 'refs/heads/release/')
