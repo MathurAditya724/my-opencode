@@ -1,4 +1,13 @@
 # Changelog
+## 0.2.2
+
+### Bug Fixes 🐛
+
+#### Ci
+
+- Wait for CI workflow before publishing by @MathurAditya724 in [#73](https://github.com/MathurAditya724/outpost/pull/73)
+- Build dashboard before packing npm tarball by @MathurAditya724 in [#71](https://github.com/MathurAditya724/outpost/pull/71)
+
 ## 0.2.0
 
 ### New Features ✨
