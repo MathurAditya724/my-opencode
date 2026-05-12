@@ -88,7 +88,11 @@ export type LifecycleStore = {
     row: Pick<EntityRow, "entity_key" | "repo" | "number" | "kind" | "session_id" | "share_url" | "cwd" | "agent">,
   ): void
   deleteEntity(entityKey: string): void
-  resolveSession(entityKey: string): EntityRow | null
+  // Resolve session by entity key, checking links and optionally linked
+  // issues. The linkedIssueKeys are issue entity keys (e.g. "owner/repo#42")
+  // extracted from a PR body — if no session is found for the PR itself,
+  // we check these issues for existing sessions to enable PR→issue affinity.
+  resolveSession(entityKey: string, linkedIssueKeys?: string[]): EntityRow | null
 
   addLink(sourceKey: string, targetKey: string, relation: string): void
 
@@ -412,7 +416,12 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
     // a session, return it. Otherwise check linked entities (both
     // directions) for a session — this lets an issue and its fixing PR
     // share the same session.
-    resolveSession(entityKey) {
+    //
+    // Also checks linkedIssueKeys (issue keys extracted from PR body)
+    // for existing sessions — this handles the case where a PR event
+    // arrives before any link is persisted (e.g., first email about a
+    // new PR that fixes an existing issue).
+    resolveSession(entityKey, linkedIssueKeys) {
       const direct = stmts.getEntity.get(entityKey)
       if (direct) return direct
 
@@ -428,6 +437,16 @@ export function openLifecycleStore(dbPath: string): LifecycleStore {
       for (const link of asTarget) {
         const source = stmts.getEntity.get(link.source_key)
         if (source) return source
+      }
+
+      // Check linked issue keys from PR body — these are issues that
+      // the PR references via "Fixes #N" etc. If any of those issues
+      // have an existing session, reuse it for the PR.
+      if (linkedIssueKeys && linkedIssueKeys.length > 0) {
+        for (const issueKey of linkedIssueKeys) {
+          const issueEntity = stmts.getEntity.get(issueKey)
+          if (issueEntity) return issueEntity
+        }
       }
 
       return null
