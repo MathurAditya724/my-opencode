@@ -42,15 +42,18 @@ export function makeCronHandlers(scheduler: CronScheduler) {
       }
 
       const timezone = typeof body.timezone === "string" ? body.timezone.trim() || "UTC" : "UTC"
+      const run_once = body.run_once === true
 
       const nextRun = scheduler.getNextRun(cron_expression, timezone)
       if (!nextRun) {
         return c.json({ error: "invalid cron expression" }, 400)
       }
 
-      const intervalValidation = validateCronInterval(cron_expression, timezone)
-      if (!intervalValidation.valid) {
-        return c.json({ error: intervalValidation.error }, 400)
+      if (!run_once) {
+        const intervalValidation = validateCronInterval(cron_expression, timezone)
+        if (!intervalValidation.valid) {
+          return c.json({ error: intervalValidation.error }, 400)
+        }
       }
 
       const prompt = typeof body.prompt === "string" ? body.prompt.trim() : ""
@@ -70,7 +73,6 @@ export function makeCronHandlers(scheduler: CronScheduler) {
 
       const id = crypto.randomUUID()
       const entity_key = typeof body.entity_key === "string" ? body.entity_key.trim() || null : null
-      const run_once = body.run_once === true
 
       store.createCronJob({
         id,
@@ -158,9 +160,11 @@ export function makeCronHandlers(scheduler: CronScheduler) {
           if (!nextRun) {
             return c.json({ error: "invalid cron expression" }, 400)
           }
-          const intervalValidation = validateCronInterval(cron_expression, tz)
-          if (!intervalValidation.valid) {
-            return c.json({ error: intervalValidation.error }, 400)
+          if (!existing.run_once) {
+            const intervalValidation = validateCronInterval(cron_expression, tz)
+            if (!intervalValidation.valid) {
+              return c.json({ error: intervalValidation.error }, 400)
+            }
           }
           updates.cron_expression = cron_expression
           updates.next_run_at = nextRun.toISOString()

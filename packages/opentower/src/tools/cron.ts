@@ -74,9 +74,11 @@ Never create cron jobs without user confirmation.`,
           return { output: `Error: Invalid cron expression "${cronExpression}"` }
         }
 
-        const intervalValidation = validateCronInterval(cronExpression, timezone)
-        if (!intervalValidation.valid) {
-          return { output: `Error: ${intervalValidation.error}` }
+        if (!runOnce) {
+          const intervalValidation = validateCronInterval(cronExpression, timezone)
+          if (!intervalValidation.valid) {
+            return { output: `Error: ${intervalValidation.error}` }
+          }
         }
 
         const id = crypto.randomUUID()
@@ -241,9 +243,11 @@ ${job.prompt}`
           if (!nextRun) {
             return { output: `Error: Invalid cron expression "${expr}"` }
           }
-          const intervalValidation = validateCronInterval(expr, tz)
-          if (!intervalValidation.valid) {
-            return { output: `Error: ${intervalValidation.error}` }
+          if (!job.run_once) {
+            const intervalValidation = validateCronInterval(expr, tz)
+            if (!intervalValidation.valid) {
+              return { output: `Error: ${intervalValidation.error}` }
+            }
           }
           updates.cron_expression = expr
           updates.next_run_at = nextRun.toISOString()
