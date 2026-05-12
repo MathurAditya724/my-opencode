@@ -196,16 +196,18 @@ COPY --chown=developer:developer skills \
 # npm via opencode-config-package.json. opentower's published tarball
 # includes the pre-built dashboard SPA in public/.
 #
+# Uses "latest" versions without a lockfile so Docker builds always get
+# the most recent published versions. This trades reproducibility for
+# freshness — acceptable here since these are our own packages.
+#
 # IMPORTANT: do NOT mount a runtime volume over /home/developer/.config/
 # opencode — it would mask the baked-in node_modules and the plugin
 # loader would fail at startup. Persistent state lives at ~/dev/.opencode
 # via the symlink set up above.
 COPY --chown=developer:developer opencode-config-package.json \
      /home/developer/.config/opencode/package.json
-COPY --chown=developer:developer opencode-config-bun.lock \
-     /home/developer/.config/opencode/bun.lock
 RUN cd /home/developer/.config/opencode \
- && bun install --frozen-lockfile --production \
+ && bun install --production \
  && rm -rf ~/.bun/install/cache
 
 # Default config for the opentower plugin: 3 broad triggers
