@@ -1,3 +1,4 @@
+import { SettingsDialog } from "@/components/settings-dialog"
 import { emitTokenChange } from "@/hooks/use-api"
 import { clearToken } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -91,9 +92,10 @@ export default function Layout() {
         ))}
       </nav>
 
-      {/* Theme toggle & logout */}
+      {/* Theme toggle, settings & logout */}
       <div className="border-t px-3 py-2 space-y-2">
         <ThemeToggle collapsed={collapsed && !mobileOpen} />
+        <SettingsDialog collapsed={collapsed && !mobileOpen} />
         {collapsed && !mobileOpen ? (
           <button
             type="button"
