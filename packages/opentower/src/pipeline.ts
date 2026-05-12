@@ -644,10 +644,30 @@ export function makePipeline(opts: {
     }
   }
 
+  // Find in-memory session for an entity, checking linked issues if the
+  // entity is a PR with "Fixes #N" references to issues.
+  function findInMemorySession(entityKey: EntityKey): SessionEntry | undefined {
+    // Direct lookup by entity key
+    const direct = sessions.get(entityKey.key)
+    if (direct) return direct
+
+    // If this is a PR with linked issues, check if any of those issues
+    // have an in-memory session we can reuse.
+    if (entityKey.linkedIssues.length > 0) {
+      for (const issueNum of entityKey.linkedIssues) {
+        const issueKey = `${entityKey.repo}#${issueNum}`
+        const issueSession = sessions.get(issueKey)
+        if (issueSession) return issueSession
+      }
+    }
+
+    return undefined
+  }
+
   return {
     dispatch(entityKey, trigger, prompt, deliveryId, matchedEvent) {
       // 1. Check in-memory sessions first (hot path).
-      const existing = sessions.get(entityKey.key)
+      const existing = findInMemorySession(entityKey)
       if (existing) {
         if (existing.idleTimer) {
           clearTimeout(existing.idleTimer)
@@ -669,7 +689,10 @@ export function makePipeline(opts: {
 
       // 2. Check the lifecycle store for a persisted session (cold path:
       //    after restart or when a PR event arrives for an issue session).
-      const persisted = store.resolveSession(entityKey.key)
+      // Convert linkedIssues (numbers) to entity keys for session lookup.
+      const linkedIssueKeys =
+        entityKey.linkedIssues.length > 0 ? entityKey.linkedIssues.map((num) => `${entityKey.repo}#${num}`) : undefined
+      const persisted = store.resolveSession(entityKey.key, linkedIssueKeys)
       if (persisted) {
         // Abort timer is started inside resumeAndPrompt after semaphore
         // acquisition so queued dispatches don't timeout while waiting.
