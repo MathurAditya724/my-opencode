@@ -18,6 +18,7 @@ import { makePipeline } from "./pipeline"
 import { makeDrainCounter, makeSemaphore } from "./semaphore"
 import { openLifecycleStore } from "./storage"
 import { makeCronTools } from "./tools/cron"
+import { makeLifecycleTools } from "./tools/lifecycle"
 export type {
   Trigger,
   TriggerSource,
@@ -206,8 +207,13 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       defaultAgent,
     })
 
+    const lifecycleTools = makeLifecycleTools({
+      store,
+      client: ctx.client,
+    })
+
     return {
-      tool: cronTools,
+      tool: { ...cronTools, ...lifecycleTools },
     }
   } catch (err) {
     g.__webhookServerStarted = false
