@@ -1,4 +1,25 @@
 # Changelog
+## 0.3.0
+
+### New Features ✨
+
+- (dashboard) Add settings dialog for OpenCode URL configuration by @MathurAditya724 in [#78](https://github.com/MathurAditya724/outpost/pull/78)
+- (opentower) Lifecycle tools, run_once interval fix, bump concurrency by @MathurAditya724 in [#77](https://github.com/MathurAditya724/outpost/pull/77)
+
+### Bug Fixes 🐛
+
+- (docker) Build dashboard SPA in Dockerfile so opentower serves the UI by @MathurAditya724 in [#75](https://github.com/MathurAditya724/outpost/pull/75)
+- (opentower) Check linked issues for session affinity on PR events by @MathurAditya724 in [#80](https://github.com/MathurAditya724/outpost/pull/80)
+
+### Documentation 📚
+
+- (skills) Add outpost-tools reference for cron and lifecycle tools by @MathurAditya724 in [#79](https://github.com/MathurAditya724/outpost/pull/79)
+
+### Internal Changes 🔧
+
+- Use latest versions for opencode plugin dependencies by @MathurAditya724 in [#83](https://github.com/MathurAditya724/outpost/pull/83)
+- Install opentower from npm instead of file: dep by @MathurAditya724 in [#76](https://github.com/MathurAditya724/outpost/pull/76)
+
 ## 0.2.2
 
 ### Bug Fixes 🐛
