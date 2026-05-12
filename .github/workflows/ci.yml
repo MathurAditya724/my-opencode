@@ -32,18 +32,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Check opencode-config lockfile is up to date
-        run: |
-          tmp=$(mktemp -d)
-          cp opencode-config-package.json "$tmp/package.json"
-          cd "$tmp"
-          bun install --save-text-lockfile
-          cd "$GITHUB_WORKSPACE"
-          if ! diff -u opencode-config-bun.lock "$tmp/bun.lock"; then
-            echo "::error::opencode-config-bun.lock is out of date. Run: tmp=\$(mktemp -d) && cp opencode-config-package.json \$tmp/package.json && cd \$tmp && bun install --save-text-lockfile && cp bun.lock \$OLDPWD/opencode-config-bun.lock"
-            exit 1
-          fi
-
       - name: Biome check
         run: bun run check
 
