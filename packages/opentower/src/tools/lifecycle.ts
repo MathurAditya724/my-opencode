@@ -182,10 +182,11 @@ Updated: ${entity.updated_at}`
           .optional()
           .describe("Maximum number of messages to return. Defaults to 20"),
       },
-      async execute(args) {
+      async execute(args, context) {
         const result = await client.session.messages({
           path: { id: args.session_id },
           query: { limit: args.limit ?? 20 },
+          signal: context.abort,
         })
 
         if (result.error) {
@@ -243,13 +244,14 @@ IMPORTANT: Before calling this tool, you MUST:
           .optional()
           .describe("Override the agent handling the message"),
       },
-      async execute(args) {
+      async execute(args, context) {
         const result = await client.session.prompt({
           path: { id: args.session_id },
           body: {
             parts: [{ type: "text", text: args.message }],
             ...(args.agent ? { agent: args.agent } : {}),
           },
+          signal: context.abort,
         })
 
         if (result.error) {
