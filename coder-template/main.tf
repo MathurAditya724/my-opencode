@@ -54,6 +54,7 @@ data "coder_parameter" "gh_token" {
   type         = "string"
   mutable      = true
   default      = ""
+  order        = 1
 }
 
 data "coder_parameter" "anthropic_api_key" {
@@ -63,6 +64,7 @@ data "coder_parameter" "anthropic_api_key" {
   type         = "string"
   mutable      = true
   default      = ""
+  order        = 10
 }
 
 data "coder_parameter" "openai_api_key" {
@@ -72,6 +74,7 @@ data "coder_parameter" "openai_api_key" {
   type         = "string"
   mutable      = true
   default      = ""
+  order        = 11
 }
 
 data "coder_parameter" "github_webhook_secret" {
@@ -81,6 +84,7 @@ data "coder_parameter" "github_webhook_secret" {
   type         = "string"
   mutable      = true
   default      = ""
+  order        = 2
 }
 
 data "coder_parameter" "webhook_port" {
@@ -90,6 +94,7 @@ data "coder_parameter" "webhook_port" {
   type         = "number"
   mutable      = true
   default      = "5050"
+  order        = 40
 }
 
 data "coder_parameter" "opentower_api_token" {
@@ -99,6 +104,67 @@ data "coder_parameter" "opentower_api_token" {
   type         = "string"
   mutable      = true
   default      = ""
+  order        = 3
+}
+
+data "coder_parameter" "gemini_api_key" {
+  name         = "gemini_api_key"
+  display_name = "Gemini API Key"
+  description  = "API key for Google Gemini models. Optional if another provider key is set."
+  type         = "string"
+  mutable      = true
+  default      = ""
+  order        = 12
+}
+
+data "coder_parameter" "groq_api_key" {
+  name         = "groq_api_key"
+  display_name = "Groq API Key"
+  description  = "API key for Groq models. Optional if another provider key is set."
+  type         = "string"
+  mutable      = true
+  default      = ""
+  order        = 13
+}
+
+data "coder_parameter" "openrouter_api_key" {
+  name         = "openrouter_api_key"
+  display_name = "OpenRouter API Key"
+  description  = "API key for OpenRouter. Optional if another provider key is set."
+  type         = "string"
+  mutable      = true
+  default      = ""
+  order        = 14
+}
+
+data "coder_parameter" "email_webhook_secret" {
+  name         = "email_webhook_secret"
+  display_name = "Email Webhook Secret"
+  description  = "HMAC secret for verifying email webhook deliveries from Cloudflare Email Worker. Required only if using email triggers."
+  type         = "string"
+  mutable      = true
+  default      = ""
+  order        = 41
+}
+
+data "coder_parameter" "sentry_dsn" {
+  name         = "sentry_dsn"
+  display_name = "Sentry DSN"
+  description  = "Sentry DSN for the opentower plugin. If set, Sentry.init() is called at plugin startup."
+  type         = "string"
+  mutable      = true
+  default      = ""
+  order        = 50
+}
+
+data "coder_parameter" "sentry_auth_token" {
+  name         = "sentry_auth_token"
+  display_name = "Sentry Auth Token"
+  description  = "Auth token for Sentry CLI. Used for non-interactive auth."
+  type         = "string"
+  mutable      = true
+  default      = ""
+  order        = 51
 }
 
 # --- Persistent volume for ~/dev ---
@@ -143,9 +209,15 @@ resource "coder_agent" "main" {
     GH_TOKEN              = data.coder_parameter.gh_token.value
     ANTHROPIC_API_KEY     = data.coder_parameter.anthropic_api_key.value
     OPENAI_API_KEY        = data.coder_parameter.openai_api_key.value
+    GEMINI_API_KEY        = data.coder_parameter.gemini_api_key.value
+    GROQ_API_KEY          = data.coder_parameter.groq_api_key.value
+    OPENROUTER_API_KEY    = data.coder_parameter.openrouter_api_key.value
     GITHUB_WEBHOOK_SECRET = data.coder_parameter.github_webhook_secret.value
+    EMAIL_WEBHOOK_SECRET  = data.coder_parameter.email_webhook_secret.value
     WEBHOOK_PORT          = tostring(data.coder_parameter.webhook_port.value)
     OPENTOWER_API_TOKEN   = data.coder_parameter.opentower_api_token.value
+    SENTRY_DSN            = data.coder_parameter.sentry_dsn.value
+    SENTRY_AUTH_TOKEN     = data.coder_parameter.sentry_auth_token.value
     # git identity is set by docker-entrypoint.sh from GH_TOKEN/gh api user;
     # do not set GIT_AUTHOR_* here — it would attribute bot commits to the
     # Coder workspace owner instead of the GitHub bot account.
@@ -359,8 +431,24 @@ resource "kubernetes_deployment_v1" "workspace" {
             value = data.coder_parameter.openai_api_key.value
           }
           env {
+            name  = "GEMINI_API_KEY"
+            value = data.coder_parameter.gemini_api_key.value
+          }
+          env {
+            name  = "GROQ_API_KEY"
+            value = data.coder_parameter.groq_api_key.value
+          }
+          env {
+            name  = "OPENROUTER_API_KEY"
+            value = data.coder_parameter.openrouter_api_key.value
+          }
+          env {
             name  = "GITHUB_WEBHOOK_SECRET"
             value = data.coder_parameter.github_webhook_secret.value
+          }
+          env {
+            name  = "EMAIL_WEBHOOK_SECRET"
+            value = data.coder_parameter.email_webhook_secret.value
           }
           env {
             name  = "WEBHOOK_PORT"
@@ -369,6 +457,14 @@ resource "kubernetes_deployment_v1" "workspace" {
           env {
             name  = "OPENTOWER_API_TOKEN"
             value = data.coder_parameter.opentower_api_token.value
+          }
+          env {
+            name  = "SENTRY_DSN"
+            value = data.coder_parameter.sentry_dsn.value
+          }
+          env {
+            name  = "SENTRY_AUTH_TOKEN"
+            value = data.coder_parameter.sentry_auth_token.value
           }
           env {
             name  = "PORT"
