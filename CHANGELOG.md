@@ -1,4 +1,14 @@
 # Changelog
+## 0.3.1
+
+### New Features ✨
+
+- (coder-template) Add missing environment variables by @MathurAditya724 in [#85](https://github.com/MathurAditya724/outpost/pull/85)
+
+### Bug Fixes 🐛
+
+- Pin docker image and opentower dep to versioned tags by @MathurAditya724 in [#86](https://github.com/MathurAditya724/outpost/pull/86)
+
 ## 0.3.0
 
 ### New Features ✨
