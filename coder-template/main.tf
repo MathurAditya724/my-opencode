@@ -259,7 +259,8 @@ resource "coder_app" "opencode" {
   }
 }
 
-# Opentower webhook listener — exposed via Coder's reverse proxy
+# Opentower webhook listener — exposed via Coder's reverse proxy.
+# Public so GitHub/email webhooks can POST without Coder auth.
 resource "coder_app" "opentower" {
   agent_id     = coder_agent.main.id
   slug         = "opentower"
@@ -267,7 +268,7 @@ resource "coder_app" "opentower" {
   url          = "http://localhost:5050"
   icon         = "/icon/kiro.svg"
   subdomain    = true
-  share        = "owner"
+  share        = "public"
 
   healthcheck {
     url       = "http://localhost:5050/healthz"
