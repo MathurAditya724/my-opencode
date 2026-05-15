@@ -44,7 +44,7 @@ data "coder_workspace_owner" "me" {}
 variable "docker_image" {
   description = "Docker image to use for the workspace"
   type        = string
-  default     = "ghcr.io/mathuraditya724/outpost:latest"
+  default     = "ghcr.io/mathuraditya724/outpost:0.3.0"
 }
 
 data "coder_parameter" "gh_token" {
