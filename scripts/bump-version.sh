@@ -5,7 +5,7 @@
 # file: deps. We bypass npm entirely by editing package.json with jq.
 #
 # Also bumps:
-#   - coder-template/main.tf  (docker_image default tag)
+#   - coder-template/main.tf  (hardcoded container image tag)
 #
 # Craft passes the new version via CRAFT_NEW_VERSION.
 set -euo pipefail

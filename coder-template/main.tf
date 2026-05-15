@@ -41,12 +41,6 @@ data "coder_workspace_owner" "me" {}
 
 # --- Parameters (prompted when creating a workspace) ---
 
-variable "docker_image" {
-  description = "Docker image to use for the workspace"
-  type        = string
-  default     = "ghcr.io/mathuraditya724/outpost:0.3.1"
-}
-
 data "coder_parameter" "gh_token" {
   name         = "gh_token"
   display_name = "GitHub Token"
@@ -404,7 +398,7 @@ resource "kubernetes_deployment_v1" "workspace" {
 
         container {
           name              = "opencode"
-          image             = var.docker_image
+          image             = "ghcr.io/mathuraditya724/outpost:0.3.1"
           image_pull_policy = "Always"
 
           # Official Coder Kubernetes template pattern:
