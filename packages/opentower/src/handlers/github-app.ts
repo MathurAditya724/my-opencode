@@ -23,6 +23,10 @@ export type GithubAppHandlerOptions = {
 export function createGithubAppHandler(opts: GithubAppHandlerOptions): WebhookHandler {
   const { webhookSecret, triggers, auth } = opts
 
+  // GitHub App bot login is "<slug>[bot]". Resolved lazily on
+  // first request and cached for the ignore_authors self-loop guard.
+  let appBotLogin: string | null = null
+
   return {
     source: "github_app",
 
@@ -61,7 +65,7 @@ export function createGithubAppHandler(opts: GithubAppHandlerOptions): WebhookHa
           return c.json({ ok: true, delivery_id: deliveryId, duplicate: true, dispatched: [] })
         }
 
-        // Extract installation ID and acquire a token for logging/verification.
+        // Extract installation ID and acquire a token for cache warming.
         // The token is NOT injected into the payload or template context to
         // avoid leaking credentials into LLM prompts and session transcripts.
         const installationId = (payload as { installation?: { id?: number } })?.installation?.id
@@ -81,6 +85,17 @@ export function createGithubAppHandler(opts: GithubAppHandlerOptions): WebhookHa
           }
         }
 
+        // Resolve the app's bot login on first request for self-loop guard.
+        if (appBotLogin === null) {
+          try {
+            const slug = await auth.getAppSlug()
+            appBotLogin = `${slug}[bot]`
+            Sentry.logger.info("github_app.bot_identity", { bot_login: appBotLogin })
+          } catch {
+            appBotLogin = context.botLogin ?? ""
+          }
+        }
+
         Sentry.logger.info("webhook.received", {
           source: "github_app",
           event,
@@ -97,7 +112,7 @@ export function createGithubAppHandler(opts: GithubAppHandlerOptions): WebhookHa
           action,
           payload,
           sender: lookupString(payload, "sender.login"),
-          botLogin: context.botLogin,
+          botLogin: appBotLogin || context.botLogin,
           deliveryId,
           templateContext: {
             event,

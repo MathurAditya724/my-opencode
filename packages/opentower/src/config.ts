@@ -56,8 +56,11 @@ export function normalizeTrigger(t: Trigger, botLogin: string | null): Normalize
 // Returns null if any required variable is missing.
 export function resolveGithubAppFromEnv(): GithubAppConfig | null {
   const appId = process.env.GITHUB_APP_ID
-  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY
+  const rawKey = process.env.GITHUB_APP_PRIVATE_KEY
   const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET
-  if (!appId || !privateKey || !webhookSecret) return null
+  if (!appId || !rawKey || !webhookSecret) return null
+  // PEM keys stored in env vars often have literal "\n" instead of
+  // real newlines. Normalize so crypto.createSign can parse the key.
+  const privateKey = rawKey.replace(/\\n/g, "\n")
   return { app_id: appId, private_key: privateKey, webhook_secret: webhookSecret }
 }
