@@ -61,18 +61,17 @@ export function createGithubAppHandler(opts: GithubAppHandlerOptions): WebhookHa
           return c.json({ ok: true, delivery_id: deliveryId, duplicate: true, dispatched: [] })
         }
 
-        // Extract installation ID from the payload for token management.
+        // Extract installation ID and acquire a token for logging/verification.
+        // The token is NOT injected into the payload or template context to
+        // avoid leaking credentials into LLM prompts and session transcripts.
         const installationId = (payload as { installation?: { id?: number } })?.installation?.id
         if (installationId) {
           try {
-            const token = await auth.getInstallationToken(installationId)
+            await auth.getInstallationToken(installationId)
             Sentry.logger.info("github_app.token_acquired", {
               installation_id: installationId,
               delivery_id: deliveryId,
             })
-            // Make the installation token available in the payload context
-            // so prompt templates and agents can reference it.
-            ;(payload as Record<string, unknown>).__installation_token = token
           } catch (err) {
             Sentry.logger.error("github_app.token_failed", {
               installation_id: installationId,

@@ -2,7 +2,7 @@
 
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
-import type { NormalizedTrigger, Trigger, WebhookConfig } from "./types"
+import type { GithubAppConfig, NormalizedTrigger, Trigger, WebhookConfig } from "./types"
 
 // Read webhooks.json. Default ~/.config/opencode/webhooks.json,
 // override via WEBHOOKS_CONFIG. Missing file = no triggers.
@@ -50,4 +50,14 @@ export function normalizeTrigger(t: Trigger, botLogin: string | null): Normalize
     events,
     ignore_authors: merged.length > 0 ? merged : undefined,
   }
+}
+
+// Resolve GitHub App config from environment variables.
+// Returns null if any required variable is missing.
+export function resolveGithubAppFromEnv(): GithubAppConfig | null {
+  const appId = process.env.GITHUB_APP_ID
+  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY
+  const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET
+  if (!appId || !privateKey || !webhookSecret) return null
+  return { app_id: appId, private_key: privateKey, webhook_secret: webhookSecret }
 }

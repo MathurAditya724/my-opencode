@@ -13,7 +13,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
 import { createOpencodeAgent } from "./agents/opencode"
 import { resolveBotLogin } from "./bot-identity"
-import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
+import { configPath, normalizeTrigger, readWebhookConfig, resolveGithubAppFromEnv } from "./config"
 import { makeCronScheduler } from "./cron"
 import { makeDedup } from "./dedup"
 import { createEntityResolver } from "./entity-resolver"
@@ -251,14 +251,6 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
     console.error("[opentower] FATAL: plugin failed to start:", err)
     throw err
   }
-}
-
-function resolveGithubAppFromEnv() {
-  const appId = process.env.GITHUB_APP_ID
-  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY
-  const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET
-  if (!appId || !privateKey || !webhookSecret) return null
-  return { app_id: appId, private_key: privateKey, webhook_secret: webhookSecret }
 }
 
 export default GitHubWebhooksPlugin
