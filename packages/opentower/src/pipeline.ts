@@ -17,9 +17,9 @@
 
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { PluginInput } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
 import type { EntityKey } from "./entity"
+import type { AgentClient } from "./interfaces"
 import type { DrainCounter, Semaphore } from "./semaphore"
 import type { LifecycleStore } from "./storage"
 import type { NormalizedTrigger } from "./types"
@@ -64,7 +64,7 @@ function repoCwd(repo: string): string {
 }
 
 export function makePipeline(opts: {
-  client: PluginInput["client"]
+  client: AgentClient
   defaultCwd: string
   timeoutMs: number
   semaphore: Semaphore

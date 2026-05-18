@@ -1,6 +1,6 @@
-// Hono app for the plugin's HTTP listener. Routes: healthz, webhook
-// ingest (one per source), JSON API, and static dashboard serving.
-// Per-route logic lives under ./handlers/.
+// Hono app for the opentower HTTP listener. Routes: healthz, webhook
+// ingest (delegated to WebhookHandlers), JSON API, and static
+// dashboard serving. Per-route logic lives under ./handlers/.
 
 import { timingSafeEqual } from "node:crypto"
 import { existsSync } from "node:fs"
@@ -10,27 +10,14 @@ import { Hono } from "hono"
 import { serveStatic } from "hono/bun"
 import { cors } from "hono/cors"
 import type { CronScheduler } from "./cron"
-import type { Dedup } from "./dedup"
-import type { EntityResolver } from "./entity-resolver"
 import { apiDispatchesHandler, apiEntitiesHandler, apiEntityDetailHandler, apiStatsHandler } from "./handlers/api"
 import { makeCronHandlers } from "./handlers/cron"
-import { emailWebhookHandler } from "./handlers/email"
-import { githubWebhookHandler } from "./handlers/github"
-import type { Pipeline } from "./pipeline"
+import type { HandlerContext, WebhookHandler } from "./interfaces"
 import type { LifecycleStore } from "./storage"
-import type { NormalizedTrigger } from "./types"
 
 export type AppEnv = {
   Variables: {
-    secret: string
-    emailSecret: string
-    dedup: Dedup
-    pipeline: Pipeline
-    botLogin: string | null
-    githubTriggers: NormalizedTrigger[]
-    emailTriggers: NormalizedTrigger[]
     store: LifecycleStore
-    entityResolver: EntityResolver | null
   }
 }
 
@@ -40,23 +27,15 @@ function safeTokenCompare(a: string, b: string): boolean {
 }
 
 export function createApp(opts: {
-  secret: string
-  emailSecret: string
-  triggers: NormalizedTrigger[]
-  dedup: Dedup
-  pipeline: Pipeline
-  botLogin: string | null
+  handlers: WebhookHandler[]
+  handlerContext: HandlerContext
   store: LifecycleStore
   apiToken: string
-  entityResolver: EntityResolver | null
   cronScheduler: CronScheduler | null
 }): Hono<AppEnv> {
-  const githubTriggers = opts.triggers.filter((t) => t.source === "github_webhook")
-  const emailTriggers = opts.triggers.filter((t) => t.source === "email")
-
   const app = new Hono<AppEnv>()
 
-  // CORS — allows the dashboard SPA (e.g. localhost:5173) to reach
+  // CORS -- allows the dashboard SPA (e.g. localhost:5173) to reach
   // all routes including /healthz and /api/*.
   app.use(
     "*",
@@ -113,22 +92,10 @@ export function createApp(opts: {
     })
   })
 
-  // Webhook ingest routes.
-  app.use("/webhooks/*", async (c, next) => {
-    c.set("secret", opts.secret)
-    c.set("emailSecret", opts.emailSecret)
-    c.set("dedup", opts.dedup)
-    c.set("pipeline", opts.pipeline)
-    c.set("botLogin", opts.botLogin)
-    c.set("githubTriggers", githubTriggers)
-    c.set("emailTriggers", emailTriggers)
-    c.set("store", opts.store)
-    c.set("entityResolver", opts.entityResolver)
-    await next()
-  })
-
-  app.post("/webhooks/github", githubWebhookHandler)
-  app.post("/webhooks/email", emailWebhookHandler)
+  // Register all webhook handlers. Each handler adds its own routes.
+  for (const handler of opts.handlers) {
+    handler.register(app, opts.handlerContext)
+  }
 
   // --- Dashboard JSON API ---
 

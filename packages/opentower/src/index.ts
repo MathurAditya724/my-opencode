@@ -3,20 +3,14 @@
 // in-process SDK client. Uses Hono for routing, Sentry for
 // observability (traces, structured logs, error tracking).
 // Listener on WEBHOOK_PORT (default 5050). Trigger config in webhooks.json.
+//
+// This module is the plugin entry point. For standalone server mode,
+// see server.ts / bin.ts.
 
-import { homedir } from "node:os"
-import { join } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 import * as Sentry from "@sentry/bun"
-import { resolveBotLogin } from "./bot-identity"
-import { configPath, normalizeTrigger, readWebhookConfig } from "./config"
-import { makeCronScheduler } from "./cron"
-import { makeDedup } from "./dedup"
-import { createEntityResolver } from "./entity-resolver"
-import { createApp } from "./handler"
-import { makePipeline } from "./pipeline"
-import { makeDrainCounter, makeSemaphore } from "./semaphore"
-import { openLifecycleStore } from "./storage"
+import { createOpencodeAgent } from "./agents/opencode"
+import { bootstrap, gracefulShutdown } from "./bootstrap"
 import { makeCronTools } from "./tools/cron"
 import { makeLifecycleTools } from "./tools/lifecycle"
 export type {
@@ -25,7 +19,9 @@ export type {
   WebhookConfig,
   NormalizedTrigger,
   SkippedDispatch,
+  GithubAppConfig,
 } from "./types"
+export type { AgentClient, WebhookHandler, HandlerContext } from "./interfaces"
 
 export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
   console.log("[opentower] plugin loading...")
@@ -67,149 +63,31 @@ export const GitHubWebhooksPlugin: Plugin = async (ctx) => {
       guard.__ghWebhookGuard = true
     }
 
-    const cfg = await readWebhookConfig()
-    console.log(`[opentower] config loaded from ${configPath()}`)
+    const client = await createOpencodeAgent({ client: ctx.client })
 
-    const port = cfg.port ?? Number(process.env.WEBHOOK_PORT ?? "5050")
-    const secret = cfg.secret ?? process.env.GITHUB_WEBHOOK_SECRET ?? ""
-    const emailSecret = cfg.email_secret ?? process.env.EMAIL_WEBHOOK_SECRET ?? ""
-    const timeoutMs = cfg.timeout_ms ?? 1_800_000
-    const maxConcurrent = Math.max(1, cfg.max_concurrent ?? 2)
-    const defaultCwd = cfg.default_cwd ?? ctx.directory
-
-    const botLogin = await resolveBotLogin()
-    if (botLogin) {
-      console.log(`[opentower] bot identity: ${botLogin}`)
-      Sentry.setTag("bot.login", botLogin)
-    } else {
-      console.warn(
-        `[opentower] WARNING: could not resolve bot identity via 'gh api user' -- $BOT_LOGIN in ignore_authors will not be substituted.`,
-      )
-    }
-
-    const triggers = (cfg.triggers ?? []).map((t) => normalizeTrigger(t, botLogin))
-    const githubTriggerCount = triggers.filter((t) => t.source === "github_webhook").length
-    const emailTriggerCount = triggers.filter((t) => t.source === "email").length
-
-    if (triggers.length === 0) {
-      console.log(`[opentower] no triggers configured (looked at ${configPath()}) -- listener disabled`)
-      return {}
-    }
-    if (githubTriggerCount > 0 && !secret) {
-      console.warn("[opentower] WARNING: no GitHub HMAC secret configured -- /webhooks/github will reject with 503")
-    }
-    if (emailTriggerCount > 0 && !emailSecret) {
-      console.warn("[opentower] WARNING: no email HMAC secret configured -- /webhooks/email will reject with 503")
-    }
-
-    const batchWindowMs = cfg.batch_window_ms ?? 5_000
-    const dedup = makeDedup()
-    const semaphore = makeSemaphore(maxConcurrent)
-    const drainCounter = makeDrainCounter()
-
-    const dbPath = process.env.LIFECYCLE_DB_PATH ?? join(homedir(), "dev", ".opencode", "lifecycle.db")
-    const store = openLifecycleStore(dbPath)
-    console.log(`[opentower] lifecycle store opened at ${dbPath}`)
-
-    const pipeline = makePipeline({
-      client: ctx.client,
-      defaultCwd,
-      timeoutMs,
-      semaphore,
-      drainCounter,
-      store,
-      batchWindowMs,
+    const result = await bootstrap({
+      client,
+      defaultCwd: ctx.directory,
     })
-
-    const entityResolver = createEntityResolver()
-    if (entityResolver) {
-      console.log("[opentower] AI entity resolver enabled (ANTHROPIC_API_KEY set)")
-    } else if (emailTriggerCount > 0) {
-      console.warn(
-        "[opentower] WARNING: ANTHROPIC_API_KEY not set -- AI entity resolution for non-GitHub emails disabled",
-      )
-    }
-
-    const apiToken = process.env.OPENTOWER_API_TOKEN ?? ""
-    if (!apiToken) {
-      console.warn("[opentower] WARNING: OPENTOWER_API_TOKEN not set -- /api/* endpoints will reject with 503")
-    }
-
-    // Find the default cron trigger (if any) for agent name fallback
-    const cronTriggers = triggers.filter((t) => t.source === "cron")
-    const defaultCronTrigger = cronTriggers[0] ?? null
-    const defaultAgent = defaultCronTrigger?.agent ?? triggers[0]?.agent ?? "github-agent"
-
-    // Initialize the cron scheduler
-    const cronScheduler = makeCronScheduler({
-      store,
-      pipeline,
-      defaultAgent,
-      cronTrigger: defaultCronTrigger,
-    })
-    cronScheduler.start()
-    console.log("[opentower] cron scheduler started")
-
-    const app = createApp({
-      secret,
-      emailSecret,
-      triggers,
-      dedup,
-      pipeline,
-      botLogin,
-      store,
-      apiToken,
-      entityResolver,
-      cronScheduler,
-    })
-
-    console.log(`[opentower] starting Bun.serve on port ${port}...`)
-    const server = Bun.serve({
-      port,
-      hostname: "0.0.0.0",
-      fetch: app.fetch,
-    })
-
-    const cronTriggerCount = cronTriggers.length
-    console.log(
-      `[opentower] listening on http://0.0.0.0:${server.port} (triggers: github=${githubTriggerCount}, email=${emailTriggerCount}, cron=${cronTriggerCount})`,
-    )
 
     let stopping = false
     const onShutdown = async (sig: NodeJS.Signals) => {
       if (stopping) return
       stopping = true
-      console.log(`[opentower] received ${sig}, closing listener (in-flight: ${drainCounter.inFlight()})`)
-      server.stop(true)
-      const drainTimeoutMs = 25_000
-      try {
-        await Promise.race([
-          drainCounter.wait(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("drain timeout")), drainTimeoutMs)),
-        ])
-        console.log("[opentower] all dispatches drained")
-      } catch {
-        console.warn(
-          `[opentower] drain timeout after ${drainTimeoutMs}ms -- ${drainCounter.inFlight()} dispatch(es) still in flight`,
-        )
-      }
-      cronScheduler.stop()
-      store.close()
-      await Sentry.close(2000)
+      await gracefulShutdown(result, sig)
     }
     process.once("SIGTERM", () => void onShutdown("SIGTERM"))
     process.once("SIGINT", () => void onShutdown("SIGINT"))
 
-    // Create cron tools for agent use
     const cronTools = makeCronTools({
-      store,
-      scheduler: cronScheduler,
-      defaultAgent,
+      store: result.store,
+      scheduler: result.cronScheduler,
+      defaultAgent: result.defaultAgent,
     })
 
     const lifecycleTools = makeLifecycleTools({
-      store,
-      client: ctx.client,
+      store: result.store,
+      client,
     })
 
     return {

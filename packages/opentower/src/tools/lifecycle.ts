@@ -2,12 +2,12 @@
 // These tools allow agents to query dispatches, entities, and session messages.
 
 import { tool } from "@opencode-ai/plugin"
-import type { PluginInput } from "@opencode-ai/plugin"
+import type { AgentClient } from "../interfaces"
 import type { LifecycleStore } from "../storage"
 
 export type LifecycleToolsOptions = {
   store: LifecycleStore
-  client: PluginInput["client"]
+  client: AgentClient
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -193,7 +193,7 @@ Updated: ${entity.updated_at}`
           const partTexts: string[] = []
 
           for (const part of msg.parts) {
-            if (part.type === "text") {
+            if (part.type === "text" && part.text) {
               const text = part.text.length > 500 ? `${part.text.slice(0, 500)}...` : part.text
               partTexts.push(`  ${text}`)
             } else if (part.type === "tool") {

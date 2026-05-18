@@ -6,6 +6,9 @@
   "description": "OpenCode plugin: receive GitHub webhooks and dispatch them to OpenCode agent sessions",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "bin": {
+    "opentower": "./src/bin.ts"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -22,6 +25,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.75",
+    "@opencode-ai/sdk": "^1.14.40",
     "@sentry/bun": "^9.0.0",
     "ai": "^6.0.175",
     "croner": "^10.0.1",
@@ -30,6 +34,11 @@
   },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.1.1"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.14.30",
